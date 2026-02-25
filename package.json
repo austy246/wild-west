@@ -1,0 +1,23 @@
+{
+  "name": "wild-west",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "howler": "^2.2.4",
+    "three": "^0.183.1"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.12",
+    "@types/three": "^0.183.1",
+    "lil-gui": "^0.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}

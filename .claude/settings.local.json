@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create vite@latest . -- --template vanilla-ts)",
+      "Bash(npm install three cannon-es howler)",
+      "Bash(npm install -D typescript vite @types/three @types/howler lil-gui)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(timeout 8 npx vite --host)",
+      "WebFetch(domain:www.thingiverse.com)",
+      "Bash(npx vite build)",
+      "Bash(npx vite --port 3000)",
+      "Bash(git init)",
+      "Bash(git add -A)"
+    ]
+  }
+}

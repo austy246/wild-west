@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wild West</title>
+  <link rel="stylesheet" href="/styles/main.css" />
+  <link rel="stylesheet" href="/styles/hud.css" />
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- HUD Overlay -->
+  <div id="hud" class="hidden">
+    <div id="health-bar">
+      <div id="health-bar-fill"></div>
+      <span id="health-text">100 / 100</span>
+    </div>
+    <div id="stamina-bar">
+      <div id="stamina-bar-fill"></div>
+      <span id="stamina-text">100 / 100</span>
+    </div>
+    <div id="lilky-counter">
+      <span id="lilky-icon">&#9733;</span>
+      <span id="lilky-amount">0</span>
+    </div>
+    <div id="weapon-indicator">
+      <span id="weapon-name">Pěsti</span>
+    </div>
+  </div>
+
+  <!-- Fade transition overlay -->
+  <div id="fade-overlay"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

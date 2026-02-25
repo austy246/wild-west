@@ -111,24 +111,31 @@ export class Player {
   }
 
   update(dt: number): void {
-    // WASD movement
+    // WASD movement (keyboard) or joystick (touch)
     const moveDir = new CANNON.Vec3(0, 0, 0);
+    const touch = InputManager.moveDirection;
 
-    if (InputManager.isKeyDown('KeyW') || InputManager.isKeyDown('ArrowUp')) {
-      moveDir.z -= 1;
-    }
-    if (InputManager.isKeyDown('KeyS') || InputManager.isKeyDown('ArrowDown')) {
-      moveDir.z += 1;
-    }
-    if (InputManager.isKeyDown('KeyA') || InputManager.isKeyDown('ArrowLeft')) {
-      moveDir.x -= 1;
-    }
-    if (InputManager.isKeyDown('KeyD') || InputManager.isKeyDown('ArrowRight')) {
-      moveDir.x += 1;
+    if (touch.x !== 0 || touch.y !== 0) {
+      // Joystick input (y maps to world z)
+      moveDir.x = touch.x;
+      moveDir.z = touch.y;
+    } else {
+      if (InputManager.isKeyDown('KeyW') || InputManager.isKeyDown('ArrowUp')) {
+        moveDir.z -= 1;
+      }
+      if (InputManager.isKeyDown('KeyS') || InputManager.isKeyDown('ArrowDown')) {
+        moveDir.z += 1;
+      }
+      if (InputManager.isKeyDown('KeyA') || InputManager.isKeyDown('ArrowLeft')) {
+        moveDir.x -= 1;
+      }
+      if (InputManager.isKeyDown('KeyD') || InputManager.isKeyDown('ArrowRight')) {
+        moveDir.x += 1;
+      }
     }
 
-    // Sprint with Shift
-    const wantsSprint = InputManager.isKeyDown('ShiftLeft') || InputManager.isKeyDown('ShiftRight');
+    // Sprint with Shift or joystick push
+    const wantsSprint = InputManager.isKeyDown('ShiftLeft') || InputManager.isKeyDown('ShiftRight') || InputManager.sprinting;
     const len = moveDir.length();
     const isMoving = len > 0;
 

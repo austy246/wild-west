@@ -19,6 +19,7 @@ import { Shop } from './economy/Shop';
 import { ShopUI } from './ui/ShopUI';
 import { PauseMenu } from './ui/PauseMenu';
 import { GameOverScreen } from './ui/GameOverScreen';
+import { TouchControls } from './ui/TouchControls';
 import { SaveManager, SaveData } from './core/SaveManager';
 import { createTerrain } from './world/Terrain';
 import { createLighting } from './world/Lighting';
@@ -130,6 +131,9 @@ export class Game {
 
     // Input
     InputManager.init(canvas);
+
+    // Touch controls (only visible on touch devices)
+    new TouchControls();
 
     // Pause menu
     this.pauseMenu = new PauseMenu();

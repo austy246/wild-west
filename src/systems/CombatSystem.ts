@@ -154,21 +154,30 @@ export class CombatSystem {
     }
   }
 
-  private meleeAttack(weapon: WeaponDef): void {
-    const playerPos = this.player.mesh.position;
-
-    // Aim toward mouse cursor on ground plane
+  private getAimForward(): THREE.Vector3 {
+    if (InputManager.isTouchDevice) {
+      const aim = InputManager.aimDirection;
+      if (aim.x !== 0 || aim.y !== 0) {
+        return new THREE.Vector3(aim.x, 0, aim.y).normalize();
+      }
+      // Fallback: use player facing direction
+      const rot = this.player.mesh.rotation.y;
+      return new THREE.Vector3(Math.sin(rot), 0, Math.cos(rot));
+    }
+    // Mouse-based aiming
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(InputManager.mousePosition, this.camera);
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const target = new THREE.Vector3();
     raycaster.ray.intersectPlane(groundPlane, target);
+    const playerPos = this.player.mesh.position;
+    return new THREE.Vector3(target.x - playerPos.x, 0, target.z - playerPos.z).normalize();
+  }
 
-    const forward = new THREE.Vector3(
-      target.x - playerPos.x,
-      0,
-      target.z - playerPos.z
-    ).normalize();
+  private meleeAttack(weapon: WeaponDef): void {
+    const playerPos = this.player.mesh.position;
+
+    const forward = this.getAimForward();
 
     // Rotate player to face mouse direction
     this.player.mesh.rotation.y = Math.atan2(forward.x, forward.z);
@@ -195,22 +204,8 @@ export class CombatSystem {
   }
 
   private rangedAttack(weapon: WeaponDef): void {
-    // Get aim direction from player toward mouse position on ground plane
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(InputManager.mousePosition, this.camera);
-
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const target = new THREE.Vector3();
-    raycaster.ray.intersectPlane(groundPlane, target);
-
-    if (!target) return;
-
     const playerPos = this.player.mesh.position.clone();
-    const direction = new THREE.Vector3(
-      target.x - playerPos.x,
-      0,
-      target.z - playerPos.z
-    ).normalize();
+    const direction = this.getAimForward();
 
     const projectile = new Projectile(playerPos, direction, weapon.damage);
     this.projectiles.push(projectile);

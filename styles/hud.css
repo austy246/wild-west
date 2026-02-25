@@ -101,3 +101,47 @@
   font-size: 14px;
   font-weight: bold;
 }
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  #health-bar {
+    width: 130px;
+    height: 18px;
+    top: 10px;
+    left: 10px;
+  }
+
+  #health-text {
+    font-size: 9px;
+  }
+
+  #stamina-bar {
+    width: 130px;
+    height: 14px;
+    top: 32px;
+    left: 10px;
+  }
+
+  #stamina-text {
+    font-size: 8px;
+  }
+
+  #lilky-counter {
+    top: 10px;
+    right: 10px;
+    font-size: 14px;
+    padding: 3px 8px;
+  }
+
+  #lilky-icon {
+    font-size: 16px;
+  }
+
+  #weapon-indicator {
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+}

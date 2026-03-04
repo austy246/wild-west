@@ -92,46 +92,199 @@ export class Village {
     scene.add(this.group);
   }
 
-  /** Stone fountain in the town square */
+  /** Stone well in the town square */
   private addFountain(): void {
-    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.8 });
+    const well = new THREE.Group();
+    well.position.set(0, 0, 0);
 
-    // Base
-    const baseGeo = new THREE.CylinderGeometry(1.8, 2, 0.5, 16);
-    const base = new THREE.Mesh(baseGeo, stoneMat);
-    base.position.set(0, 0.25, 0);
-    base.castShadow = true;
-    base.receiveShadow = true;
-    this.group.add(base);
+    // --- Stone base (irregular flagstones around the well) ---
+    const flagstoneMat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.95 });
+    const flagstonePositions = [
+      [0, 0.04, 1.4, 0.6, 0.5], [0.9, 0.04, 1.1, 0.5, 0.55],
+      [-0.9, 0.04, 1.1, 0.55, 0.5], [1.3, 0.04, 0.4, 0.5, 0.6],
+      [-1.3, 0.04, 0.4, 0.55, 0.5], [1.3, 0.04, -0.4, 0.5, 0.55],
+      [-1.3, 0.04, -0.4, 0.6, 0.5], [0.9, 0.04, -1.1, 0.5, 0.5],
+      [-0.9, 0.04, -1.1, 0.55, 0.55], [0, 0.04, -1.4, 0.6, 0.5],
+    ];
+    for (const [fx, fy, fz, fw, fd] of flagstonePositions) {
+      const stone = new THREE.Mesh(
+        new THREE.BoxGeometry(fw, 0.08, fd),
+        flagstoneMat
+      );
+      stone.position.set(fx, fy, fz);
+      stone.rotation.y = Math.random() * 0.3 - 0.15;
+      stone.receiveShadow = true;
+      well.add(stone);
+    }
 
-    // Wall ring
-    const wallGeo = new THREE.TorusGeometry(1.5, 0.2, 8, 24);
-    const wall = new THREE.Mesh(wallGeo, stoneMat);
-    wall.position.set(0, 0.6, 0);
-    wall.rotation.x = Math.PI / 2;
-    wall.castShadow = true;
-    this.group.add(wall);
+    // --- Stone cylinder wall ---
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.9 });
+    const wallOuter = new THREE.CylinderGeometry(0.9, 1.0, 1.0, 12);
+    const wallInner = new THREE.CylinderGeometry(0.7, 0.8, 1.0, 12);
 
-    // Center pillar
-    const pillarGeo = new THREE.CylinderGeometry(0.15, 0.2, 1.8, 8);
-    const pillar = new THREE.Mesh(pillarGeo, stoneMat);
-    pillar.position.set(0, 0.9, 0);
-    pillar.castShadow = true;
-    this.group.add(pillar);
+    // Outer wall
+    const outerWall = new THREE.Mesh(wallOuter, stoneMat);
+    outerWall.position.y = 0.5;
+    outerWall.castShadow = true;
+    outerWall.receiveShadow = true;
+    well.add(outerWall);
 
-    // Water (blue disc inside the ring)
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x4a90d9,
-      transparent: true,
-      opacity: 0.6,
-      roughness: 0.1,
-      metalness: 0.3,
+    // Inner wall (darker, inside)
+    const innerMat = new THREE.MeshStandardMaterial({ color: 0x555555, side: THREE.BackSide });
+    const innerWall = new THREE.Mesh(wallInner, innerMat);
+    innerWall.position.y = 0.5;
+    well.add(innerWall);
+
+    // Stone rim on top
+    const rimGeo = new THREE.TorusGeometry(0.85, 0.12, 8, 16);
+    const rim = new THREE.Mesh(rimGeo, stoneMat);
+    rim.position.y = 1.05;
+    rim.rotation.x = Math.PI / 2;
+    rim.castShadow = true;
+    well.add(rim);
+
+    // --- Wooden support posts (two vertical posts) ---
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.85 });
+    const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.8 });
+
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 2.2, 0.12),
+        woodMat
+      );
+      post.position.set(side * 0.65, 1.6, 0);
+      post.castShadow = true;
+      well.add(post);
+    }
+
+    // --- Wooden roof (shingle-style A-frame) ---
+    const roofWidth = 1.8;
+    const roofDepth = 1.4;
+    const roofPeakY = 3.2;
+    const roofBaseY = 2.5;
+
+    // Roof shape (triangular prism)
+    const roofShape = new THREE.Shape();
+    roofShape.moveTo(-roofWidth / 2, 0);
+    roofShape.lineTo(0, roofPeakY - roofBaseY);
+    roofShape.lineTo(roofWidth / 2, 0);
+    roofShape.closePath();
+
+    const roofGeo = new THREE.ExtrudeGeometry(roofShape, {
+      depth: roofDepth,
+      bevelEnabled: false,
     });
-    const waterGeo = new THREE.CircleGeometry(1.3, 24);
-    const water = new THREE.Mesh(waterGeo, waterMat);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x6d6058, roughness: 0.9 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(0, roofBaseY, -roofDepth / 2);
+    roof.castShadow = true;
+    well.add(roof);
+
+    // Shingle rows (decorative horizontal planks on each side)
+    const shingleMat = new THREE.MeshStandardMaterial({ color: 0x5a524a, roughness: 0.95 });
+    for (let row = 0; row < 4; row++) {
+      const t = row / 4;
+      const yOff = t * (roofPeakY - roofBaseY);
+      const halfW = (roofWidth / 2) * (1 - t) - 0.05;
+      for (const side of [-1, 1]) {
+        const shingle = new THREE.Mesh(
+          new THREE.BoxGeometry(halfW * 0.9, 0.04, roofDepth + 0.06),
+          shingleMat
+        );
+        const sx = side * (halfW * 0.45 + 0.02);
+        const sy = roofBaseY + yOff + 0.08;
+        shingle.position.set(sx, sy, 0);
+        // Tilt shingles to follow roof slope
+        shingle.rotation.z = side * -0.45;
+        shingle.castShadow = true;
+        well.add(shingle);
+      }
+    }
+
+    // Ridge beam at top
+    const ridge = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, roofDepth + 0.15),
+      darkWoodMat
+    );
+    ridge.position.set(0, roofPeakY, 0);
+    ridge.castShadow = true;
+    well.add(ridge);
+
+    // --- Crossbeam (horizontal bar between posts for the rope/winch) ---
+    const crossbeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 1.5, 8),
+      woodMat
+    );
+    crossbeam.position.set(0, 2.5, 0);
+    crossbeam.rotation.z = Math.PI / 2;
+    crossbeam.castShadow = true;
+    well.add(crossbeam);
+
+    // --- Winch / crank handle ---
+    // Handle arm
+    const handleArm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.3, 0.04),
+      darkWoodMat
+    );
+    handleArm.position.set(0.8, 2.5, 0);
+    well.add(handleArm);
+    // Handle grip
+    const handleGrip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.12, 6),
+      new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, roughness: 0.4 })
+    );
+    handleGrip.position.set(0.8, 2.65, 0);
+    handleGrip.rotation.x = Math.PI / 2;
+    well.add(handleGrip);
+
+    // --- Rope hanging down ---
+    const ropeMat = new THREE.MeshStandardMaterial({ color: 0xb89a6a, roughness: 1.0 });
+    const rope = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.02, 1.8, 6),
+      ropeMat
+    );
+    rope.position.set(0, 1.6, 0);
+    well.add(rope);
+
+    // --- Bucket hanging on the rope ---
+    const bucketMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.8 });
+    // Bucket body
+    const bucket = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.15, 0.22, 8),
+      bucketMat
+    );
+    bucket.position.set(0, 0.75, 0);
+    bucket.castShadow = true;
+    well.add(bucket);
+    // Bucket metal bands
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0x777777, metalness: 0.5, roughness: 0.5 });
+    for (const by of [0.68, 0.82]) {
+      const band = new THREE.Mesh(
+        new THREE.TorusGeometry(0.135, 0.012, 6, 12),
+        bandMat
+      );
+      band.position.set(0, by, 0);
+      band.rotation.x = Math.PI / 2;
+      well.add(band);
+    }
+
+    // --- Water surface inside the well (dark, deep) ---
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x1a3a5c,
+      transparent: true,
+      opacity: 0.7,
+      roughness: 0.1,
+      metalness: 0.2,
+    });
+    const water = new THREE.Mesh(
+      new THREE.CircleGeometry(0.7, 16),
+      waterMat
+    );
     water.rotation.x = -Math.PI / 2;
-    water.position.set(0, 0.45, 0);
-    this.group.add(water);
+    water.position.y = 0.3;
+    well.add(water);
+
+    this.group.add(well);
   }
 
   /** Scatter barrels, cacti, hitching posts around the village */

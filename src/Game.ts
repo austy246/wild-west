@@ -110,14 +110,6 @@ export class Game {
     );
     this.interactionSystem.onInteract = (npc) => this.handleNPCInteraction(npc);
 
-    // Interior Manager
-    this.interiorManager = new InteriorManager(
-      this.village,
-      this.player.body,
-      this.player.mesh,
-      this.engine.scene
-    );
-
     // Combat
     this.combatSystem = new CombatSystem(
       this.player,
@@ -128,6 +120,16 @@ export class Game {
 
     // Camera
     this.cameraSystem = new CameraSystem(this.engine.camera, this.player.mesh);
+
+    // Interior Manager (after camera so we can pass cameraSystem)
+    this.interiorManager = new InteriorManager(
+      this.village,
+      this.player.body,
+      this.player.mesh,
+      this.engine.scene,
+      this.physics.world,
+      this.cameraSystem
+    );
 
     // Input
     InputManager.init(canvas);

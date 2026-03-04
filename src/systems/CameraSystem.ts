@@ -44,4 +44,18 @@ export class CameraSystem {
       this.target.position.z
     );
   }
+
+  /** Instantly snap camera to the target + offset (skip lerp) */
+  snap(): void {
+    this.camera.position.set(
+      this.target.position.x + this.offset.x,
+      this.target.position.y + this.offset.y,
+      this.target.position.z + this.offset.z
+    );
+    this.camera.lookAt(
+      this.target.position.x,
+      this.target.position.y + 1,
+      this.target.position.z
+    );
+  }
 }

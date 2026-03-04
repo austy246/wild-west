@@ -3,8 +3,9 @@ export const PLAYER_SPEED = 24;
 export const PLAYER_SPRINT_SPEED = 42;
 export const PLAYER_MAX_HP = 100;
 export const PLAYER_MAX_STAMINA = 100;
-export const STAMINA_DRAIN_RATE = 25;  // per second while sprinting
-export const STAMINA_REGEN_RATE = 15;  // per second while not sprinting
+export const STAMINA_DRAIN_RATE = 12.5;  // per second while sprinting (half speed)
+export const STAMINA_REGEN_RATE = 7.5;   // per second while not sprinting (half speed)
+export const STAMINA_EXHAUST_COOLDOWN = 3; // seconds before regen starts after full depletion
 
 // Camera
 export const CAMERA_OFFSET_X = -15;

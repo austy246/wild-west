@@ -1,6 +1,32 @@
 import * as THREE from 'three';
 import { randomRange } from '../utils/math';
 
+// Road geometry — main road x=0 width 5, side paths at z=-24,-12,0,12,24 width 2.5
+const MAIN_ROAD_HALF_W = 2.5;
+const SIDE_PATH_HALF_W = 1.25;
+const SIDE_Z = [-24, -12, 0, 12, 24];
+
+/** Snap a point onto the nearest road surface */
+function snapToRoad(x: number, z: number): { x: number; z: number } {
+  let bestX = x, bestZ = z, bestDist = Infinity;
+
+  // Check main road (x=0, z=-35..35)
+  const clampedZ_main = Math.max(-35, Math.min(35, z));
+  const clampedX_main = Math.max(-MAIN_ROAD_HALF_W, Math.min(MAIN_ROAD_HALF_W, x));
+  const d_main = (x - clampedX_main) ** 2 + (z - clampedZ_main) ** 2;
+  if (d_main < bestDist) { bestDist = d_main; bestX = clampedX_main; bestZ = clampedZ_main; }
+
+  // Check each side path
+  for (const sz of SIDE_Z) {
+    const clampedX_side = Math.max(-18, Math.min(18, x));
+    const clampedZ_side = Math.max(sz - SIDE_PATH_HALF_W, Math.min(sz + SIDE_PATH_HALF_W, z));
+    const d_side = (x - clampedX_side) ** 2 + (z - clampedZ_side) ** 2;
+    if (d_side < bestDist) { bestDist = d_side; bestX = clampedX_side; bestZ = clampedZ_side; }
+  }
+
+  return { x: bestX, z: bestZ };
+}
+
 export interface NPCDef {
   id: string;
   name: string;
@@ -117,12 +143,11 @@ export class NPC {
 
     if (this.state === 'idle' && this.stateTimer <= 0) {
       if (this.def.patrolRadius > 0) {
-        // Pick a random wander target within patrol radius
-        this.wanderTarget.set(
-          this.homePosition.x + randomRange(-this.def.patrolRadius, this.def.patrolRadius),
-          0,
-          this.homePosition.z + randomRange(-this.def.patrolRadius, this.def.patrolRadius)
-        );
+        // Pick a random wander target within patrol radius, snapped to road
+        const rawX = this.homePosition.x + randomRange(-this.def.patrolRadius, this.def.patrolRadius);
+        const rawZ = this.homePosition.z + randomRange(-this.def.patrolRadius, this.def.patrolRadius);
+        const snapped = snapToRoad(rawX, rawZ);
+        this.wanderTarget.set(snapped.x, 0, snapped.z);
         this.state = 'wander';
         this.stateTimer = randomRange(2, 5);
       } else {
@@ -139,8 +164,14 @@ export class NPC {
         this.stateTimer = randomRange(2, 5);
       } else {
         const speed = 1.5;
-        this.mesh.position.x += (dx / dist) * speed * dt;
-        this.mesh.position.z += (dz / dist) * speed * dt;
+        let newX = this.mesh.position.x + (dx / dist) * speed * dt;
+        let newZ = this.mesh.position.z + (dz / dist) * speed * dt;
+        // Keep NPC on the road while walking
+        const onRoad = snapToRoad(newX, newZ);
+        newX = onRoad.x;
+        newZ = onRoad.z;
+        this.mesh.position.x = newX;
+        this.mesh.position.z = newZ;
         // Face movement direction
         this.mesh.rotation.y = Math.atan2(dx, dz);
         // Bobbing

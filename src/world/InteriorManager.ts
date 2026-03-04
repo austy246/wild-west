@@ -9,6 +9,7 @@ import {
   CAMERA_OFFSET_Y,
   CAMERA_OFFSET_Z,
 } from '../utils/constants';
+import { CameraSystem } from '../systems/CameraSystem';
 
 const DOOR_INTERACT_DIST = 2.5;
 const INTERIOR_Y = -50; // interiors are stored below the world
@@ -18,11 +19,14 @@ export class InteriorManager {
   private playerBody: CANNON.Body;
   private playerMesh: THREE.Object3D;
   private scene: THREE.Scene;
+  private physicsWorld: CANNON.World;
+  private cameraSystem: CameraSystem;
 
   private currentBuilding: Building | null = null;
   private fadeOverlay: HTMLElement;
   private promptEl: HTMLElement;
   private isTransitioning = false;
+  private interiorFloorBody: CANNON.Body | null = null;
 
   /** Camera offsets for interior view (closer, more top-down) */
   readonly interiorCameraOffset = new THREE.Vector3(-6, 10, 6);
@@ -35,12 +39,16 @@ export class InteriorManager {
     village: Village,
     playerBody: CANNON.Body,
     playerMesh: THREE.Object3D,
-    scene: THREE.Scene
+    scene: THREE.Scene,
+    physicsWorld: CANNON.World,
+    cameraSystem: CameraSystem
   ) {
     this.village = village;
     this.playerBody = playerBody;
     this.playerMesh = playerMesh;
     this.scene = scene;
+    this.physicsWorld = physicsWorld;
+    this.cameraSystem = cameraSystem;
 
     this.fadeOverlay = document.getElementById('fade-overlay')!;
 
@@ -128,13 +136,26 @@ export class InteriorManager {
     building.interiorGroup.visible = true;
     building.interiorGroup.position.y = INTERIOR_Y;
 
-    // Teleport player to interior center
+    // Add a physics floor at interior level so player doesn't fall
+    this.interiorFloorBody = new CANNON.Body({
+      type: CANNON.Body.STATIC,
+      shape: new CANNON.Plane(),
+    });
+    this.interiorFloorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    this.interiorFloorBody.position.set(0, INTERIOR_Y, 0);
+    this.physicsWorld.addBody(this.interiorFloorBody);
+
+    // Teleport player to the door area inside (front of interior, on the ground)
     this.playerBody.position.set(
       building.interiorGroup.position.x,
-      INTERIOR_Y + 1.5,
-      building.interiorGroup.position.z + building.def.depth / 4
+      INTERIOR_Y + 0.7,
+      building.interiorGroup.position.z + building.def.depth / 2 - 1.5
     );
     this.playerBody.velocity.set(0, 0, 0);
+
+    // Snap camera offset and position instantly so there's no slow drift
+    this.cameraSystem.offset.copy(this.interiorCameraOffset);
+    this.cameraSystem.snap();
 
     this.currentBuilding = building;
     EventBus.emit('player:enter-building', { name: building.def.name });
@@ -160,6 +181,12 @@ export class InteriorManager {
     // Hide interior
     building.interiorGroup.visible = false;
 
+    // Remove interior floor collider
+    if (this.interiorFloorBody) {
+      this.physicsWorld.removeBody(this.interiorFloorBody);
+      this.interiorFloorBody = null;
+    }
+
     // Show all exteriors
     for (const b of this.village.buildings) {
       b.exteriorGroup.visible = true;
@@ -172,6 +199,11 @@ export class InteriorManager {
       building.doorPosition.z
     );
     this.playerBody.velocity.set(0, 0, 0);
+
+    // Snap camera offset and position instantly back to exterior
+    const extOffset = new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z);
+    this.cameraSystem.offset.copy(extOffset);
+    this.cameraSystem.snap();
 
     this.currentBuilding = null;
     EventBus.emit('player:exit-building', { name: building.def.name });

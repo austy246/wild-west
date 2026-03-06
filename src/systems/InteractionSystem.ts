@@ -11,8 +11,9 @@ export class InteractionSystem {
   private dialogBox: DialogBox;
   private promptEl: HTMLElement;
 
-  /** Callback invoked when player right-clicks on an NPC */
+  /** Callback invoked when player presses E near an NPC */
   onInteract: ((npc: NPC) => void) | null = null;
+  private eKeyWasDown = false;
 
   constructor(npcs: NPC[], playerMesh: THREE.Object3D, dialogBox: DialogBox) {
     this.npcs = npcs;
@@ -62,10 +63,11 @@ export class InteractionSystem {
     }
 
     if (nearest) {
-      this.promptEl.textContent = `Pravý klik → ${nearest.def.name}`;
+      this.promptEl.textContent = `Stiskni E → ${nearest.def.name}`;
       this.promptEl.style.display = 'block';
 
-      if (InputManager.rightClick) {
+      const eDown = InputManager.isKeyDown('KeyE');
+      if (eDown && !this.eKeyWasDown) {
         // Face the NPC toward the player
         const dx = playerPos.x - nearest.mesh.position.x;
         const dz = playerPos.z - nearest.mesh.position.z;
@@ -80,5 +82,7 @@ export class InteractionSystem {
     } else {
       this.promptEl.style.display = 'none';
     }
+
+    this.eKeyWasDown = InputManager.isKeyDown('KeyE');
   }
 }

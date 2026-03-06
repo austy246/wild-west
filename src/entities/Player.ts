@@ -18,6 +18,7 @@ export class Player {
   stamina = PLAYER_MAX_STAMINA;
   maxStamina = PLAYER_MAX_STAMINA;
   isSprinting = false;
+  speedMultiplier = 1;
   private exhaustCooldown = 0; // seconds remaining before regen can start
 
   constructor() {
@@ -245,7 +246,7 @@ export class Player {
       fixedRotation: true,
       linearDamping: 0.4,
     });
-    body.position.set(0, 2, 0);
+    body.position.set(3, 2, 3);
     return body;
   }
 
@@ -295,7 +296,7 @@ export class Player {
       }
     }
 
-    const speed = this.isSprinting ? PLAYER_SPRINT_SPEED : PLAYER_SPEED;
+    const speed = (this.isSprinting ? PLAYER_SPRINT_SPEED : PLAYER_SPEED) * this.speedMultiplier;
 
     // Normalize so diagonal movement isn't faster
     if (isMoving) {

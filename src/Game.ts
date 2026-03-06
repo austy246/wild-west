@@ -20,6 +20,7 @@ import { ShopUI } from './ui/ShopUI';
 import { PauseMenu } from './ui/PauseMenu';
 import { GameOverScreen } from './ui/GameOverScreen';
 import { TouchControls } from './ui/TouchControls';
+import { Hotbar } from './ui/Hotbar';
 import { SaveManager, SaveData } from './core/SaveManager';
 import { createTerrain } from './world/Terrain';
 import { createLighting } from './world/Lighting';
@@ -50,6 +51,11 @@ export class Game {
 
   private physicsAccumulator = 0;
   private autoSaveTimer = 0;
+  private shackPromptEl: HTMLElement;
+  private eKeyWasDown = false;
+  private eKeyWasDownUnicorn = false;
+  private ridingUnicorn = false;
+  private unicornPromptEl!: HTMLElement;
 
   constructor(canvas: HTMLCanvasElement) {
     // Core
@@ -202,6 +208,50 @@ export class Game {
 
     // Show HUD
     document.getElementById('hud')?.classList.remove('hidden');
+
+    // Hotbar
+    new Hotbar(() => this.combatSystem.playerHp >= this.combatSystem.playerMaxHp);
+
+    // Shack interaction prompt
+    this.shackPromptEl = document.createElement('div');
+    this.shackPromptEl.style.cssText = `
+      position: fixed;
+      bottom: 105px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: #ff69b4;
+      padding: 6px 16px;
+      border: 2px solid #ff1493;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+    `;
+    this.shackPromptEl.textContent = 'Stiskni E pro vyvolání jednorožce';
+    document.body.appendChild(this.shackPromptEl);
+
+    // Unicorn mount prompt
+    this.unicornPromptEl = document.createElement('div');
+    this.unicornPromptEl.style.cssText = `
+      position: fixed;
+      bottom: 105px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: #ff69b4;
+      padding: 6px 16px;
+      border: 2px solid #ff1493;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+    `;
+    document.body.appendChild(this.unicornPromptEl);
   }
 
   /** Main game loop tick */
@@ -255,6 +305,73 @@ export class Game {
 
     // Interaction (right-click on NPCs)
     this.interactionSystem.update();
+
+    // Village (horse animations etc.)
+    this.village.update(dt, this.player.mesh.position);
+
+    // Shack unicorn interaction
+    if (this.village.isNearShack(playerPos)) {
+      this.shackPromptEl.style.display = 'block';
+      const eDown = InputManager.isKeyDown('KeyE');
+      if (eDown && !this.eKeyWasDown) {
+        if (this.village.trySpawnUnicorn(playerPos, this.engine.scene)) {
+          this.showNotification('Jednorožec se objevil!');
+          this.shackPromptEl.style.display = 'none';
+        }
+      }
+      this.eKeyWasDown = eDown;
+    } else {
+      this.shackPromptEl.style.display = 'none';
+      this.eKeyWasDown = InputManager.isKeyDown('KeyE');
+    }
+
+    // Unicorn mount/dismount
+    const unicornMesh = this.village.getUnicornMesh();
+    if (this.ridingUnicorn && unicornMesh) {
+      // Player sits on top of unicorn — raise player, place unicorn beneath
+      this.player.mesh.position.y += 1.15;
+      unicornMesh.position.set(
+        this.player.mesh.position.x,
+        0,
+        this.player.mesh.position.z
+      );
+      unicornMesh.rotation.y = this.player.mesh.rotation.y - Math.PI / 2;
+      this.unicornPromptEl.textContent = 'Stiskni E pro sesednutí';
+      this.unicornPromptEl.style.display = 'block';
+    } else if (!this.ridingUnicorn && this.village.isNearUnicorn(playerPos)) {
+      this.unicornPromptEl.textContent = 'Stiskni E pro nasednutí na jednorožce';
+      this.unicornPromptEl.style.display = 'block';
+    } else {
+      this.unicornPromptEl.style.display = 'none';
+    }
+
+    // Handle E key for mount/dismount
+    if (unicornMesh) {
+      const eDown = InputManager.isKeyDown('KeyE');
+      if (eDown && !this.eKeyWasDownUnicorn) {
+        if (this.ridingUnicorn) {
+          // Dismount
+          this.ridingUnicorn = false;
+          this.player.speedMultiplier = 1;
+          this.player.body.linearDamping = 0.4;
+          this.combatSystem.ridingUnicorn = false;
+          unicornMesh.position.set(
+            this.player.mesh.position.x + 2,
+            0,
+            this.player.mesh.position.z
+          );
+          this.showNotification('Sesedl jsi z jednorožce');
+        } else if (this.village.isNearUnicorn(playerPos)) {
+          // Mount
+          this.ridingUnicorn = true;
+          this.player.speedMultiplier = 2.5;
+          this.player.body.linearDamping = 0;
+          this.combatSystem.ridingUnicorn = true;
+          this.showNotification('Nasedl jsi na jednorožce!');
+        }
+      }
+      this.eKeyWasDownUnicorn = eDown;
+    }
 
     // Interior manager (door interactions)
     this.interiorManager.update();

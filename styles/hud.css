@@ -102,6 +102,68 @@
   font-weight: bold;
 }
 
+/* --- Minecraft-style Hotbar --- */
+#hotbar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 3px solid #555;
+  border-radius: 3px;
+}
+
+.hotbar-slot {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  background: rgba(60, 60, 60, 0.8);
+  border: 2px solid #1a1a1a;
+  box-sizing: border-box;
+}
+
+.hotbar-slot.selected {
+  border-color: #eee;
+  background: rgba(100, 100, 100, 0.9);
+}
+
+.hotbar-key {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: bold;
+  font-family: monospace;
+}
+
+.hotbar-item {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+
+.hotbar-count {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  font-family: monospace;
+  text-shadow: 1px 1px 1px #000, -1px -1px 1px #000;
+}
+
+.hotbar-count:empty {
+  display: none;
+}
+
 /* Mobile responsive adjustments */
 @media (max-width: 768px) {
   #health-bar {
@@ -138,10 +200,29 @@
   }
 
   #weapon-indicator {
-    bottom: 60px;
+    bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 12px;
     padding: 4px 10px;
+  }
+
+  #hotbar {
+    bottom: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .hotbar-slot {
+    width: 50px;
+    height: 50px;
+  }
+
+  .hotbar-key {
+    font-size: 9px;
+  }
+
+  .hotbar-item {
+    font-size: 22px;
   }
 }

@@ -37,6 +37,7 @@ export interface NPCDef {
   /** Patrol radius — 0 for stationary NPCs (e.g. inside buildings) */
   patrolRadius: number;
   dialog: string;
+  gender?: 'male' | 'female';
 }
 
 type AIState = 'idle' | 'wander' | 'talk';

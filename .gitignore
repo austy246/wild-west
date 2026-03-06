@@ -3,3 +3,9 @@ dist/
 .env
 .env.*
 *.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo

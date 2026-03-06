@@ -65,34 +65,101 @@ export class Collectible {
   }
 
   private createGoldNuggetMesh(group: THREE.Group): THREE.Group {
+    // Rich gold material with varied tones
     const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xdaa520,
+      emissive: 0xb8860b,
+      emissiveIntensity: 0.15,
+      roughness: 0.45,
+      metalness: 0.85,
+    });
+    const brightGoldMat = new THREE.MeshStandardMaterial({
       color: 0xffd700,
       emissive: 0xdaa520,
       emissiveIntensity: 0.2,
-      roughness: 0.35,
+      roughness: 0.3,
       metalness: 0.9,
     });
+    const darkGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xb8860b,
+      emissive: 0x8b6914,
+      emissiveIntensity: 0.1,
+      roughness: 0.6,
+      metalness: 0.7,
+    });
 
-    // Main boulder shape — squashed, irregular dodecahedron
-    const mainGeo = new THREE.DodecahedronGeometry(0.22, 0);
+    // Main rocky nugget body — large irregular shape
+    const mainGeo = new THREE.DodecahedronGeometry(0.28, 1);
+    // Distort vertices for rocky look
+    const pos = mainGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const noise = 0.85 + Math.sin(x * 12) * 0.08 + Math.cos(z * 15) * 0.07;
+      pos.setXYZ(i, x * noise, y * noise, z * noise);
+    }
+    pos.needsUpdate = true;
+    mainGeo.computeVertexNormals();
     const main = new THREE.Mesh(mainGeo, goldMat);
-    main.scale.set(1.2, 0.7, 1);
-    main.rotation.set(0.3, 0.5, 0.2);
+    main.scale.set(1.4, 0.65, 1.1);
+    main.rotation.set(0.2, 0.4, 0.1);
     main.castShadow = true;
     group.add(main);
 
-    // Smaller bump on top
-    const bumpGeo = new THREE.DodecahedronGeometry(0.12, 0);
-    const bump = new THREE.Mesh(bumpGeo, goldMat);
-    bump.position.set(0.08, 0.12, 0.05);
-    bump.scale.set(1, 0.6, 0.8);
-    bump.rotation.set(0.8, 1.2, 0);
-    bump.castShadow = true;
-    group.add(bump);
+    // Secondary chunk — overlapping bump
+    const chunk2Geo = new THREE.DodecahedronGeometry(0.18, 1);
+    const pos2 = chunk2Geo.attributes.position;
+    for (let i = 0; i < pos2.count; i++) {
+      const x = pos2.getX(i);
+      const y = pos2.getY(i);
+      const z = pos2.getZ(i);
+      const n = 0.88 + Math.sin(y * 18) * 0.07 + Math.cos(x * 10) * 0.05;
+      pos2.setXYZ(i, x * n, y * n, z * n);
+    }
+    pos2.needsUpdate = true;
+    chunk2Geo.computeVertexNormals();
+    const chunk2 = new THREE.Mesh(chunk2Geo, brightGoldMat);
+    chunk2.position.set(0.12, 0.1, 0.06);
+    chunk2.scale.set(1.1, 0.7, 0.9);
+    chunk2.rotation.set(0.7, 1.0, 0.3);
+    chunk2.castShadow = true;
+    group.add(chunk2);
+
+    // Third smaller chunk
+    const chunk3Geo = new THREE.DodecahedronGeometry(0.12, 0);
+    const chunk3 = new THREE.Mesh(chunk3Geo, darkGoldMat);
+    chunk3.position.set(-0.1, 0.06, -0.08);
+    chunk3.scale.set(1.2, 0.5, 0.8);
+    chunk3.rotation.set(1.5, 0.3, 0.8);
+    chunk3.castShadow = true;
+    group.add(chunk3);
+
+    // Tiny bright facets (simulate shiny spots)
+    const facetMat = new THREE.MeshStandardMaterial({
+      color: 0xffec80,
+      emissive: 0xffd700,
+      emissiveIntensity: 0.4,
+      roughness: 0.1,
+      metalness: 1.0,
+    });
+    const facetPositions = [
+      [0.05, 0.15, 0.12], [-0.08, 0.08, 0.14], [0.15, 0.05, -0.04],
+      [-0.12, 0.12, 0.02], [0.08, 0.02, -0.1],
+    ];
+    for (const [fx, fy, fz] of facetPositions) {
+      const facet = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(0.03, 0),
+        facetMat
+      );
+      facet.position.set(fx, fy, fz);
+      facet.rotation.set(fx * 10, fy * 8, fz * 12);
+      group.add(facet);
+    }
 
     // Warm golden glow
-    const light = new THREE.PointLight(0xffd700, 0.4, 2.5);
-    light.position.y = 0.2;
+    const light = new THREE.PointLight(0xffd700, 0.5, 3);
+    light.position.y = 0.15;
     group.add(light);
 
     return group;

@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { EventBus } from '../core/EventBus';
 import { randomRange } from '../utils/math';
 
-type BanditState = 'patrol' | 'alert' | 'chase' | 'attack' | 'retreat' | 'dead';
+type BanditState = 'patrol' | 'alert' | 'chase' | 'attack' | 'dead';
 
 const DETECTION_RANGE = 15;
 const ATTACK_RANGE = 2;
-const RETREAT_HP_THRESHOLD = 20;
 const ATTACK_COOLDOWN = 1.2;
 const ATTACK_DAMAGE = 12;
 const PATROL_SPEED = 2;
@@ -32,6 +31,9 @@ export class Bandit {
   private patrolRadius: number;
   private patrolTarget = new THREE.Vector3();
   private deathTimer = 0;
+  private flyVelocity = new THREE.Vector3();
+  private flySpinSpeed = new THREE.Vector3();
+  private flying = false;
 
   constructor(def: BanditDef) {
     this.id = def.id;
@@ -214,6 +216,36 @@ export class Bandit {
   update(dt: number, playerPos: THREE.Vector3): void {
     if (this.state === 'dead') {
       this.deathTimer -= dt;
+      if (this.flying) {
+        // Apply gravity and move
+        this.flyVelocity.y -= 20 * dt;
+        this.mesh.position.x += this.flyVelocity.x * dt;
+        this.mesh.position.y += this.flyVelocity.y * dt;
+        this.mesh.position.z += this.flyVelocity.z * dt;
+        // Spin
+        this.mesh.rotation.x += this.flySpinSpeed.x * dt;
+        this.mesh.rotation.y += this.flySpinSpeed.y * dt;
+        this.mesh.rotation.z += this.flySpinSpeed.z * dt;
+        // Stop when hitting ground
+        if (this.mesh.position.y < 0.3 && this.flyVelocity.y < 0) {
+          this.mesh.position.y = 0.3;
+          this.flying = false;
+          this.mesh.rotation.set(Math.PI / 2, this.mesh.rotation.y, 0);
+        }
+      }
+      // Fade out when player walks near the body
+      if (!this.flying && this.mesh.visible) {
+        const dx = playerPos.x - this.mesh.position.x;
+        const dz = playerPos.z - this.mesh.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 2.5) {
+          // Shrink and fade away
+          this.mesh.scale.multiplyScalar(1 - dt * 3);
+          if (this.mesh.scale.x < 0.05) {
+            this.mesh.visible = false;
+          }
+        }
+      }
       if (this.deathTimer <= 0) {
         this.mesh.visible = false;
       }
@@ -238,9 +270,6 @@ export class Bandit {
         break;
       case 'attack':
         this.doAttack(dt, dx, dz, distToPlayer);
-        break;
-      case 'retreat':
-        this.doRetreat(dt, dx, dz);
         break;
     }
 
@@ -309,28 +338,14 @@ export class Bandit {
       return;
     }
 
-    if (this.hp < RETREAT_HP_THRESHOLD) {
-      this.state = 'retreat';
-      return;
-    }
-
     if (this.attackCooldown <= 0) {
       this.attackCooldown = ATTACK_COOLDOWN;
       EventBus.emit('combat:bandit-attack', { damage: ATTACK_DAMAGE, banditId: this.id });
     }
   }
 
-  private doRetreat(dt: number, dx: number, dz: number): void {
-    // Run away from player
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist > 0.1) {
-      this.mesh.position.x -= (dx / dist) * CHASE_SPEED * dt;
-      this.mesh.position.z -= (dz / dist) * CHASE_SPEED * dt;
-      this.mesh.rotation.y = Math.atan2(-dx, -dz);
-    }
-  }
 
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, attackerPos?: THREE.Vector3): void {
     if (this.state === 'dead') return;
     this.hp = Math.max(0, this.hp - amount);
 
@@ -343,7 +358,7 @@ export class Bandit {
     this.flashHit();
 
     if (this.hp <= 0) {
-      this.die();
+      this.die(attackerPos);
     }
   }
 
@@ -370,17 +385,35 @@ export class Bandit {
     }, 120);
   }
 
-  private die(): void {
+  private die(attackerPos?: THREE.Vector3): void {
     this.state = 'dead';
-    this.deathTimer = 3;
-
-    // Tilt over
-    this.mesh.rotation.x = Math.PI / 2;
-    this.mesh.position.y = 0.3;
+    this.deathTimer = 5;
 
     EventBus.emit('combat:kill', { enemyType: 'bandit', banditId: this.id });
-    // Drop some lilky
     EventBus.emit('economy:earn', { amount: 15 });
+
+    if (attackerPos) {
+      // Launch bandit flying away from attacker
+      this.flying = true;
+      const dx = this.mesh.position.x - attackerPos.x;
+      const dz = this.mesh.position.z - attackerPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz) || 1;
+      const launchSpeed = 50;
+      this.flyVelocity.set(
+        (dx / dist) * launchSpeed,
+        18,  // upward launch
+        (dz / dist) * launchSpeed
+      );
+      this.flySpinSpeed.set(
+        randomRange(8, 14),
+        randomRange(6, 12),
+        randomRange(8, 14)
+      );
+    } else {
+      // Fallback: just tilt over
+      this.mesh.rotation.x = Math.PI / 2;
+      this.mesh.position.y = 0.3;
+    }
   }
 
   private updateHPBar(): void {

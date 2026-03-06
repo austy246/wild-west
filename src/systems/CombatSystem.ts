@@ -45,6 +45,9 @@ export class CombatSystem {
   playerMaxHp = 100;
   private dead = false;
 
+  /** When true, left-click does a unicorn horn charge attack */
+  ridingUnicorn = false;
+
   private weaponHud: HTMLElement | null;
   private healthFill: HTMLElement | null;
   private healthText: HTMLElement | null;
@@ -117,7 +120,7 @@ export class CombatSystem {
         const dx = proj.mesh.position.x - bandit.mesh.position.x;
         const dz = proj.mesh.position.z - bandit.mesh.position.z;
         if (Math.sqrt(dx * dx + dz * dz) < PROJECTILE_HIT_DIST) {
-          bandit.takeDamage(proj.damage);
+          bandit.takeDamage(proj.damage, this.player.mesh.position);
           proj.active = false;
           proj.mesh.visible = false;
           this.spawnDamageNumber(bandit.mesh.position, proj.damage);
@@ -139,6 +142,12 @@ export class CombatSystem {
   }
 
   private attack(): void {
+    if (this.ridingUnicorn) {
+      this.cooldownTimer = 0.4;
+      this.unicornAttack();
+      return;
+    }
+
     const weapon = WEAPONS[this.currentWeapon];
     this.cooldownTimer = weapon.cooldown;
 
@@ -151,6 +160,36 @@ export class CombatSystem {
       }
       this.rangedAttack(weapon);
       this.currentAmmo--;
+    }
+  }
+
+  private unicornAttack(): void {
+    const playerPos = this.player.mesh.position;
+    const forward = this.getAimForward();
+    const range = 4;
+    const damage = 30;
+
+    // Rotate player to face attack direction
+    this.player.mesh.rotation.y = Math.atan2(forward.x, forward.z);
+
+    // Spawn yellow swing arc
+    this.spawnSwingArc(playerPos, this.player.mesh.rotation.y, range);
+
+    // Hit ALL bandits in range within a wide 180-degree arc
+    for (const bandit of this.bandits) {
+      if (bandit.state === 'dead') continue;
+      const dx = bandit.mesh.position.x - playerPos.x;
+      const dz = bandit.mesh.position.z - playerPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist > range) continue;
+
+      const dirToBandit = new THREE.Vector3(dx, 0, dz).normalize();
+      const dot = forward.dot(dirToBandit);
+      if (dot > 0) {
+        bandit.takeDamage(damage, playerPos);
+        this.spawnDamageNumber(bandit.mesh.position, damage);
+      }
     }
   }
 
@@ -197,7 +236,7 @@ export class CombatSystem {
       const dirToBandit = new THREE.Vector3(dx, 0, dz).normalize();
       const dot = forward.dot(dirToBandit);
       if (dot > 0.3) {
-        bandit.takeDamage(weapon.damage);
+        bandit.takeDamage(weapon.damage, playerPos);
         this.spawnDamageNumber(bandit.mesh.position, weapon.damage);
       }
     }
@@ -259,7 +298,7 @@ export class CombatSystem {
   respawn(): void {
     this.dead = false;
     this.playerHp = this.playerMaxHp;
-    this.player.body.position.set(0, 2, 0);
+    this.player.body.position.set(3, 2, 3);
     this.player.body.velocity.set(0, 0, 0);
     this.updateHUD();
     EventBus.emit('player:respawned');

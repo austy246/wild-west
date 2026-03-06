@@ -50,7 +50,7 @@ const BUILDING_DEFS: BuildingDef[] = [
     name: 'Stáje',
     width: 7, depth: 5, height: 3.5,
     wallColor: 0x795548, roofColor: 0x5d4037,
-    x: -12, z: -12, rotY: Math.PI,
+    x: -7, z: -12, rotY: Math.PI / 2,
   },
   // --- North row (z ~ -24) ---
   {
@@ -67,9 +67,29 @@ const BUILDING_DEFS: BuildingDef[] = [
   },
 ];
 
+interface CorralHorse {
+  mesh: THREE.Group;
+  targetX: number;
+  targetZ: number;
+  speed: number;
+  waitTimer: number;
+}
+
+interface UnicornShack {
+  position: THREE.Vector3;
+  unicornSpawned: boolean;
+}
+
 export class Village {
   readonly buildings: Building[] = [];
   readonly group = new THREE.Group();
+  private corralHorses: CorralHorse[] = [];
+  private corralBounds = { minX: -16, maxX: -10, minZ: -14.5, maxZ: -9.5 };
+  private horseSoundCooldown = 0;
+  private horseAudioElements: HTMLAudioElement[] = [];
+  private horseSoundsLoaded = false;
+  private unicornShack: UnicornShack | null = null;
+  private unicornMesh: THREE.Group | null = null;
 
   constructor(scene: THREE.Scene, physicsWorld: CANNON.World) {
     // Roads
@@ -87,9 +107,115 @@ export class Village {
     // Decorations
     this.addFountain();
     this.addProps();
+    this.addStableCorral();
     this.addBuildingLabels();
+    this.addCollapsedShack();
+
+    // Well collider (cylinder at origin)
+    const wellBody = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC });
+    wellBody.addShape(new CANNON.Cylinder(1.0, 1.0, 1.2, 12));
+    wellBody.position.set(0, 0.6, 0);
+    physicsWorld.addBody(wellBody);
+
+    // Corral fence colliders (4 walls around cx=-13, cz=-12, W=6, D=5)
+    const cx = -13, cz = -12, fw = 6, fd = 5, fh = 1.4;
+    const fenceThickness = 0.3;
+    const fenceWalls: [number, number, number, number, number][] = [
+      // [x, z, sizeX, sizeZ]  (y is centered at fh/2)
+      [cx, cz + fd / 2, fw + fenceThickness, fenceThickness, fh], // front
+      [cx, cz - fd / 2, fw + fenceThickness, fenceThickness, fh], // back
+      [cx - fw / 2, cz, fenceThickness, fd, fh],                   // left
+      [cx + fw / 2, cz, fenceThickness, fd, fh],                   // right
+    ];
+    for (const [fx, fz, sx, sz, sy] of fenceWalls) {
+      const body = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC });
+      body.addShape(new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2)));
+      body.position.set(fx, sy / 2, fz);
+      physicsWorld.addBody(body);
+    }
 
     scene.add(this.group);
+  }
+
+  /** Update animated elements (horses in corral) */
+  update(dt: number, playerPos?: THREE.Vector3): void {
+    const { minX, maxX, minZ, maxZ } = this.corralBounds;
+    const margin = 0.8; // keep horses away from fence
+
+    for (const h of this.corralHorses) {
+      if (h.waitTimer > 0) {
+        h.waitTimer -= dt;
+        continue;
+      }
+
+      const dx = h.targetX - h.mesh.position.x;
+      const dz = h.targetZ - h.mesh.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 0.3) {
+        // Reached target — wait, then pick a new one
+        h.waitTimer = 2 + Math.random() * 4;
+        h.targetX = minX + margin + Math.random() * (maxX - minX - margin * 2);
+        h.targetZ = minZ + margin + Math.random() * (maxZ - minZ - margin * 2);
+        h.speed = 0.4 + Math.random() * 0.6;
+        continue;
+      }
+
+      // Move toward target
+      const moveSpeed = h.speed * dt;
+      const nx = dx / dist;
+      const nz = dz / dist;
+      h.mesh.position.x += nx * moveSpeed;
+      h.mesh.position.z += nz * moveSpeed;
+
+      // Face movement direction (horse head points along +X, so offset by -PI/2)
+      h.mesh.rotation.y = Math.atan2(nx, nz) - Math.PI / 2;
+
+      // Simple leg animation (bob up and down slightly)
+      h.mesh.position.y = Math.abs(Math.sin(Date.now() * 0.008)) * 0.04;
+    }
+
+    // Horse sounds when player is near corral
+    if (playerPos && this.corralHorses.length > 0) {
+      this.horseSoundCooldown -= dt;
+      const cx = (this.corralBounds.minX + this.corralBounds.maxX) / 2;
+      const cz = (this.corralBounds.minZ + this.corralBounds.maxZ) / 2;
+      const dx = playerPos.x - cx;
+      const dz = playerPos.z - cz;
+      const distToCorral = Math.sqrt(dx * dx + dz * dz);
+
+      if (distToCorral < 12) {
+        this.ensureHorseSoundsLoaded();
+        if (this.horseSoundCooldown <= 0 && this.horseAudioElements.length > 0) {
+          const vol = Math.max(0.1, 1 - distToCorral / 12);
+          this.playHorseSound(vol);
+          this.horseSoundCooldown = 4 + Math.random() * 6;
+        }
+      }
+    }
+  }
+
+  private ensureHorseSoundsLoaded(): void {
+    if (this.horseSoundsLoaded) return;
+    this.horseSoundsLoaded = true;
+
+    // Preload horse sounds as Audio elements
+    const base = import.meta.env.BASE_URL;
+    const urls = [`${base}sounds/horse1.mp3`, `${base}sounds/horse2.mp3`, `${base}sounds/horse3.mp3`];
+    for (const url of urls) {
+      const audio = new Audio(url);
+      audio.preload = 'auto';
+      audio.load();
+      this.horseAudioElements.push(audio);
+    }
+  }
+
+  private playHorseSound(volume: number): void {
+    if (this.horseAudioElements.length === 0) return;
+    const audio = this.horseAudioElements[Math.floor(Math.random() * this.horseAudioElements.length)];
+    audio.volume = volume * 0.5;
+    audio.currentTime = 0;
+    audio.play().catch(() => { /* autoplay blocked, will work after user interaction */ });
   }
 
   /** Stone well in the town square */
@@ -268,13 +394,15 @@ export class Village {
       well.add(band);
     }
 
-    // --- Water surface inside the well (dark, deep) ---
+    // --- Water surface inside the well (blue) ---
     const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x1a3a5c,
+      color: 0x2196f3,
+      emissive: 0x0d47a1,
+      emissiveIntensity: 0.15,
       transparent: true,
-      opacity: 0.7,
-      roughness: 0.1,
-      metalness: 0.2,
+      opacity: 0.8,
+      roughness: 0.05,
+      metalness: 0.3,
     });
     const water = new THREE.Mesh(
       new THREE.CircleGeometry(0.7, 16),
@@ -376,6 +504,403 @@ export class Village {
     bar.castShadow = true;
     g.add(bar);
     return g;
+  }
+
+  /** Corral (ohrada) with horses next to the stables */
+  private addStableCorral(): void {
+    const corralGroup = new THREE.Group();
+    // Stáje is at x=-4, z=-12, rotY=-PI/2 (faces toward +X / road)
+    // Place corral to the left of the stable (more negative X)
+    const cx = -13;
+    const cz = -12;
+    const fenceW = 6;
+    const fenceD = 5;
+    const fenceH = 1.2;
+    const postH = 1.4;
+
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
+    const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.85 });
+
+    // Fence posts (corners + midpoints)
+    const postGeo = new THREE.CylinderGeometry(0.06, 0.08, postH, 6);
+    const postPositions = [
+      // Corners
+      [cx - fenceW / 2, cz - fenceD / 2],
+      [cx + fenceW / 2, cz - fenceD / 2],
+      [cx - fenceW / 2, cz + fenceD / 2],
+      [cx + fenceW / 2, cz + fenceD / 2],
+      // Midpoints
+      [cx, cz - fenceD / 2],
+      [cx, cz + fenceD / 2],
+      [cx - fenceW / 2, cz],
+      [cx + fenceW / 2, cz],
+    ];
+    for (const [px, pz] of postPositions) {
+      const post = new THREE.Mesh(postGeo, woodMat);
+      post.position.set(px, postH / 2, pz);
+      post.castShadow = true;
+      corralGroup.add(post);
+    }
+
+    // Fence rails (horizontal bars) - 2 rails high on each side
+    const railMat = darkWoodMat;
+    for (const railY of [0.4, 0.9]) {
+      // Front rail (facing +Z) - has a gap to connect to stable
+      const frontRailGeo = new THREE.BoxGeometry(fenceW, 0.08, 0.06);
+      const frontRail = new THREE.Mesh(frontRailGeo, railMat);
+      frontRail.position.set(cx, railY, cz + fenceD / 2);
+      corralGroup.add(frontRail);
+
+      // Back rail
+      const backRail = new THREE.Mesh(frontRailGeo, railMat);
+      backRail.position.set(cx, railY, cz - fenceD / 2);
+      corralGroup.add(backRail);
+
+      // Left rail
+      const sideRailGeo = new THREE.BoxGeometry(0.06, 0.08, fenceD);
+      const leftRail = new THREE.Mesh(sideRailGeo, railMat);
+      leftRail.position.set(cx - fenceW / 2, railY, cz);
+      corralGroup.add(leftRail);
+
+      // Right rail (connects toward stable)
+      const rightRail = new THREE.Mesh(sideRailGeo, railMat);
+      rightRail.position.set(cx + fenceW / 2, railY, cz);
+      corralGroup.add(rightRail);
+    }
+
+    // Add 3 horses inside the corral
+    const horsePositions: [number, number, number][] = [
+      [cx - 1.5, 0, cz - 0.5],
+      [cx + 0.5, 0, cz + 1],
+      [cx + 1.5, 0, cz - 1.2],
+    ];
+    const horseColors = [0x5c3317, 0x2c1608, 0xc4956a]; // brown, dark brown, palomino
+    const horseRotations = [0.3, -0.5, Math.PI * 0.7];
+
+    for (let i = 0; i < 3; i++) {
+      const horse = this.createHorse(horseColors[i]);
+      const [hx, , hz] = horsePositions[i];
+      horse.position.set(hx, 0, hz);
+      horse.rotation.y = horseRotations[i];
+      corralGroup.add(horse);
+
+      this.corralHorses.push({
+        mesh: horse,
+        targetX: hx + (Math.random() - 0.5) * 2,
+        targetZ: hz + (Math.random() - 0.5) * 2,
+        speed: 0.4 + Math.random() * 0.6,
+        waitTimer: 1 + Math.random() * 3,
+      });
+    }
+
+    // Dirt ground in corral
+    const groundGeo = new THREE.PlaneGeometry(fenceW, fenceD);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 1.0 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(cx, 0.02, cz);
+    ground.receiveShadow = true;
+    corralGroup.add(ground);
+
+    // Water trough
+    const troughMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.8 });
+    const troughGeo = new THREE.BoxGeometry(1.2, 0.4, 0.5);
+    const trough = new THREE.Mesh(troughGeo, troughMat);
+    trough.position.set(cx - fenceW / 2 + 1, 0.2, cz - fenceD / 2 + 0.5);
+    trough.castShadow = true;
+    corralGroup.add(trough);
+    // Water inside
+    const waterGeo = new THREE.PlaneGeometry(1.0, 0.3);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x3a6b8a, transparent: true, opacity: 0.7, roughness: 0.1,
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(cx - fenceW / 2 + 1, 0.38, cz - fenceD / 2 + 0.5);
+    corralGroup.add(water);
+
+    this.group.add(corralGroup);
+  }
+
+  /** Simple 3D horse model */
+  private createHorse(color: number): THREE.Group {
+    const horse = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
+
+    // Body (elongated box)
+    const bodyGeo = new THREE.BoxGeometry(1.4, 0.7, 0.6);
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.set(0, 1.15, 0);
+    body.castShadow = true;
+    horse.add(body);
+
+    // Neck (angled box)
+    const neckGeo = new THREE.BoxGeometry(0.3, 0.7, 0.35);
+    const neck = new THREE.Mesh(neckGeo, bodyMat);
+    neck.position.set(0.6, 1.6, 0);
+    neck.rotation.z = -0.4;
+    neck.castShadow = true;
+    horse.add(neck);
+
+    // Head
+    const headGeo = new THREE.BoxGeometry(0.5, 0.25, 0.28);
+    const head = new THREE.Mesh(headGeo, bodyMat);
+    head.position.set(0.9, 1.85, 0);
+    head.castShadow = true;
+    horse.add(head);
+
+    // Ears
+    for (const side of [-1, 1]) {
+      const earGeo = new THREE.ConeGeometry(0.04, 0.12, 4);
+      const ear = new THREE.Mesh(earGeo, bodyMat);
+      ear.position.set(0.8, 2.02, side * 0.1);
+      horse.add(ear);
+    }
+
+    // Legs (4 cylinders)
+    const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.8, 6);
+    const legPositions = [
+      [0.45, 0.4, 0.18], [0.45, 0.4, -0.18],
+      [-0.45, 0.4, 0.18], [-0.45, 0.4, -0.18],
+    ];
+    for (const [lx, ly, lz] of legPositions) {
+      const leg = new THREE.Mesh(legGeo, bodyMat);
+      leg.position.set(lx, ly, lz);
+      leg.castShadow = true;
+      horse.add(leg);
+
+      // Hoof
+      const hoofGeo = new THREE.CylinderGeometry(0.07, 0.08, 0.08, 6);
+      const hoof = new THREE.Mesh(hoofGeo, darkMat);
+      hoof.position.set(lx, 0.04, lz);
+      horse.add(hoof);
+    }
+
+    // Tail
+    const tailGeo = new THREE.CylinderGeometry(0.03, 0.05, 0.6, 6);
+    const tail = new THREE.Mesh(tailGeo, darkMat);
+    tail.position.set(-0.8, 1.1, 0);
+    tail.rotation.z = 0.6;
+    horse.add(tail);
+
+    // Mane (along neck)
+    const maneMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+    for (let i = 0; i < 4; i++) {
+      const maneGeo = new THREE.BoxGeometry(0.04, 0.15, 0.35);
+      const mane = new THREE.Mesh(maneGeo, maneMat);
+      mane.position.set(0.45 + i * 0.12, 1.55 + i * 0.12, 0);
+      horse.add(mane);
+    }
+
+    return horse;
+  }
+
+  /** Collapsed shack in the middle-right area */
+  private addCollapsedShack(): void {
+    const shack = new THREE.Group();
+    const sx = 50, sz = 5;
+    shack.position.set(sx, 0, sz);
+
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.95 });
+    const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 });
+
+    // Back wall (tilted, partially collapsed)
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 0.15), woodMat);
+    backWall.position.set(0, 1.1, -1.5);
+    backWall.rotation.x = 0.15;
+    backWall.castShadow = true;
+    shack.add(backWall);
+
+    // Left wall (leaning inward)
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.2, 3), woodMat);
+    leftWall.position.set(-1.9, 1.0, 0);
+    leftWall.rotation.z = 0.1;
+    leftWall.castShadow = true;
+    shack.add(leftWall);
+
+    // Right wall (collapsed, fallen partially)
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2, 2.5), woodMat);
+    rightWall.position.set(1.9, 0.7, -0.2);
+    rightWall.rotation.z = -0.35;
+    rightWall.rotation.x = 0.1;
+    rightWall.castShadow = true;
+    shack.add(rightWall);
+
+    // Roof (collapsed, angled on ground)
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.12, 3.5), darkWoodMat);
+    roof.position.set(0.3, 1.8, 0);
+    roof.rotation.z = -0.25;
+    roof.rotation.x = 0.1;
+    roof.castShadow = true;
+    shack.add(roof);
+
+    // Fallen planks on ground
+    for (let i = 0; i < 5; i++) {
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8 + Math.random() * 1.2, 0.06, 0.15),
+        i % 2 === 0 ? woodMat : darkWoodMat
+      );
+      plank.position.set(
+        (Math.random() - 0.5) * 3,
+        0.03,
+        (Math.random() - 0.5) * 2.5
+      );
+      plank.rotation.y = Math.random() * Math.PI;
+      plank.rotation.z = (Math.random() - 0.5) * 0.3;
+      shack.add(plank);
+    }
+
+    // Front opening (no wall — this is where player enters/interacts)
+
+    this.group.add(shack);
+    this.unicornShack = {
+      position: new THREE.Vector3(sx, 0, sz),
+      unicornSpawned: false,
+    };
+  }
+
+  /** Try to spawn unicorn when player presses E near the shack. Returns true if spawned. */
+  trySpawnUnicorn(playerPos: THREE.Vector3, scene: THREE.Scene): boolean {
+    if (!this.unicornShack || this.unicornShack.unicornSpawned) return false;
+
+    const dx = playerPos.x - this.unicornShack.position.x;
+    const dz = playerPos.z - this.unicornShack.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist > 4) return false;
+
+    this.unicornShack.unicornSpawned = true;
+    const unicorn = this.createUnicorn();
+    unicorn.position.set(
+      this.unicornShack.position.x + 1,
+      0,
+      this.unicornShack.position.z + 2
+    );
+    unicorn.rotation.y = -Math.PI / 2;
+    this.unicornMesh = unicorn;
+    scene.add(unicorn);
+    return true;
+  }
+
+  /** Check if player is near the shack (for showing prompt) */
+  isNearShack(playerPos: THREE.Vector3): boolean {
+    if (!this.unicornShack || this.unicornShack.unicornSpawned) return false;
+    const dx = playerPos.x - this.unicornShack.position.x;
+    const dz = playerPos.z - this.unicornShack.position.z;
+    return Math.sqrt(dx * dx + dz * dz) < 4;
+  }
+
+  /** Check if player is near the spawned unicorn */
+  isNearUnicorn(playerPos: THREE.Vector3): boolean {
+    if (!this.unicornMesh) return false;
+    const dx = playerPos.x - this.unicornMesh.position.x;
+    const dz = playerPos.z - this.unicornMesh.position.z;
+    return Math.sqrt(dx * dx + dz * dz) < 3;
+  }
+
+  /** Get the unicorn mesh (for attaching to player) */
+  getUnicornMesh(): THREE.Group | null {
+    return this.unicornMesh;
+  }
+
+  /** Pink unicorn — same as horse but pink with a horn */
+  private createUnicorn(): THREE.Group {
+    const unicorn = new THREE.Group();
+    const pinkColor = 0xff69b4;
+    const bodyMat = new THREE.MeshStandardMaterial({ color: pinkColor, roughness: 0.7 });
+    const darkPinkMat = new THREE.MeshStandardMaterial({ color: 0xff1493, roughness: 0.8 });
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+
+    // Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.7, 0.6), bodyMat);
+    body.position.set(0, 1.15, 0);
+    body.castShadow = true;
+    unicorn.add(body);
+
+    // Neck
+    const neck = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.7, 0.35), bodyMat);
+    neck.position.set(0.6, 1.6, 0);
+    neck.rotation.z = -0.4;
+    neck.castShadow = true;
+    unicorn.add(neck);
+
+    // Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.28), bodyMat);
+    head.position.set(0.9, 1.85, 0);
+    head.castShadow = true;
+    unicorn.add(head);
+
+    // Horn (pink cone on top of head)
+    const hornMat = new THREE.MeshStandardMaterial({
+      color: 0xff69b4,
+      emissive: 0xff69b4,
+      emissiveIntensity: 0.3,
+      metalness: 0.4,
+      roughness: 0.3,
+    });
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.5, 8), hornMat);
+    horn.position.set(0.9, 2.22, 0);
+    horn.castShadow = true;
+    unicorn.add(horn);
+
+    // Ears
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 4), bodyMat);
+      ear.position.set(0.8, 2.02, side * 0.1);
+      unicorn.add(ear);
+    }
+
+    // Legs
+    const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.8, 6);
+    const legPositions = [
+      [0.45, 0.4, 0.18], [0.45, 0.4, -0.18],
+      [-0.45, 0.4, 0.18], [-0.45, 0.4, -0.18],
+    ];
+    for (const [lx, ly, lz] of legPositions) {
+      const leg = new THREE.Mesh(legGeo, bodyMat);
+      leg.position.set(lx, ly, lz);
+      leg.castShadow = true;
+      unicorn.add(leg);
+
+      const hoof = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.07, 0.08, 0.08, 6),
+        blackMat
+      );
+      hoof.position.set(lx, 0.04, lz);
+      unicorn.add(hoof);
+    }
+
+    // Eyes (black)
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 6, 6),
+        blackMat
+      );
+      eye.position.set(1.05, 1.88, side * 0.12);
+      unicorn.add(eye);
+    }
+
+    // Tail (pink, flowing)
+    const tail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.05, 0.6, 6),
+      darkPinkMat
+    );
+    tail.position.set(-0.8, 1.1, 0);
+    tail.rotation.z = 0.6;
+    unicorn.add(tail);
+
+    // Mane (pink along neck)
+    for (let i = 0; i < 4; i++) {
+      const mane = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.15, 0.35),
+        darkPinkMat
+      );
+      mane.position.set(0.45 + i * 0.12, 1.55 + i * 0.12, 0);
+      unicorn.add(mane);
+    }
+
+    return unicorn;
   }
 
   /** 3D text labels floating above each building */

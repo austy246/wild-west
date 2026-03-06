@@ -55,6 +55,7 @@ export const NPC_DEFS: NPCDef[] = [
     x: 5, z: -3,
     patrolRadius: 6,
     dialog: 'Slyšela jsem, že u staré studny se něco leskne. Možná zlato?',
+    gender: 'female',
   },
   {
     id: 'townsfolk3',

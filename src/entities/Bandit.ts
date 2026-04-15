@@ -9,7 +9,7 @@ const ATTACK_RANGE = 2;
 const ATTACK_COOLDOWN = 1.2;
 const ATTACK_DAMAGE = 12;
 const PATROL_SPEED = 2;
-const CHASE_SPEED = 4;
+const CHASE_SPEED = 3;
 
 export interface BanditDef {
   id: string;

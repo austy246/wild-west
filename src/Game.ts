@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Engine } from './core/Engine';
 import { InputManager } from './core/InputManager';
 import { PhysicsWorld } from './core/PhysicsWorld';
@@ -49,6 +50,7 @@ export class Game {
   private pauseMenu: PauseMenu;
   private gameOverScreen: GameOverScreen;
 
+  private terrain!: THREE.Mesh;
   private physicsAccumulator = 0;
   private autoSaveTimer = 0;
   private shackPromptEl: HTMLElement;
@@ -65,7 +67,8 @@ export class Game {
     // World
     createSkybox(this.engine.scene);
     createLighting(this.engine.scene);
-    this.engine.scene.add(createTerrain());
+    this.terrain = createTerrain();
+    this.engine.scene.add(this.terrain);
 
     // Player
     this.player = new Player();
@@ -134,7 +137,8 @@ export class Game {
       this.player.mesh,
       this.engine.scene,
       this.physics.world,
-      this.cameraSystem
+      this.cameraSystem,
+      this.terrain
     );
 
     // Input

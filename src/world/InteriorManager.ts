@@ -12,7 +12,7 @@ import {
 import { CameraSystem } from '../systems/CameraSystem';
 
 const DOOR_INTERACT_DIST = 2.5;
-const INTERIOR_Y = -50; // interiors are stored below the world
+const INTERIOR_Y = -50; // interiors stored underground when not in use
 
 export class InteriorManager {
   private village: Village;
@@ -21,15 +21,20 @@ export class InteriorManager {
   private scene: THREE.Scene;
   private physicsWorld: CANNON.World;
   private cameraSystem: CameraSystem;
+  private terrain: THREE.Mesh;
 
   private currentBuilding: Building | null = null;
   private fadeOverlay: HTMLElement;
   private promptEl: HTMLElement;
   private isTransitioning = false;
-  private interiorFloorBody: CANNON.Body | null = null;
 
-  /** Camera offsets for interior view (closer, more top-down) */
-  readonly interiorCameraOffset = new THREE.Vector3(-6, 10, 6);
+  // Temporary objects created when entering a building
+  private wallBody: CANNON.Body | null = null;
+  private frontWallMesh: THREE.Mesh | null = null;
+  private savedBackground: THREE.Color | THREE.Texture | null = null;
+  private savedFog: THREE.Fog | THREE.FogExp2 | null = null;
+
+  private savedFov = 45;
 
   get isInside(): boolean {
     return this.currentBuilding !== null;
@@ -41,7 +46,8 @@ export class InteriorManager {
     playerMesh: THREE.Object3D,
     scene: THREE.Scene,
     physicsWorld: CANNON.World,
-    cameraSystem: CameraSystem
+    cameraSystem: CameraSystem,
+    terrain: THREE.Mesh
   ) {
     this.village = village;
     this.playerBody = playerBody;
@@ -49,6 +55,7 @@ export class InteriorManager {
     this.scene = scene;
     this.physicsWorld = physicsWorld;
     this.cameraSystem = cameraSystem;
+    this.terrain = terrain;
 
     this.fadeOverlay = document.getElementById('fade-overlay')!;
 
@@ -73,6 +80,13 @@ export class InteriorManager {
       pointer-events: none;
     `;
     document.body.appendChild(this.promptEl);
+
+    // Disable frustum culling on all interior groups
+    for (const b of this.village.buildings) {
+      b.interiorGroup.traverse((child) => {
+        child.frustumCulled = false;
+      });
+    }
   }
 
   update(): void {
@@ -85,14 +99,12 @@ export class InteriorManager {
     );
 
     if (this.currentBuilding) {
-      // Inside a building — check for exit (E key near door area = center-front of interior)
-      // The exit zone is at positive Z inside the interior
-      const interiorExitZ = this.currentBuilding.interiorGroup.position.z + this.currentBuilding.def.depth / 2 - 0.5;
-      const exitPos = new THREE.Vector3(
-        this.currentBuilding.interiorGroup.position.x,
-        INTERIOR_Y + 1,
-        interiorExitZ
-      );
+      // Inside — check for exit near the door area
+      const def = this.currentBuilding.def;
+      const exitLocal = new THREE.Vector3(0, 0, def.depth / 2 - 0.5);
+      exitLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), def.rotY);
+      const exitPos = new THREE.Vector3(def.x + exitLocal.x, 1, def.z + exitLocal.z);
+
       const dist = playerPos.distanceTo(exitPos);
 
       if (dist < DOOR_INTERACT_DIST + 1) {
@@ -127,38 +139,113 @@ export class InteriorManager {
     this.fadeOverlay.classList.add('active');
     await this.wait(350);
 
-    // Hide all exteriors
+    const def = building.def;
+
+    // --- Hide the outside world ---
+    this.terrain.visible = false;
+    this.savedFog = this.scene.fog;
+    this.scene.fog = null;
+    this.savedBackground = this.scene.background as THREE.Color | THREE.Texture | null;
+    this.scene.background = new THREE.Color(0x1a1410); // dark brown/black
+
     for (const b of this.village.buildings) {
       b.exteriorGroup.visible = false;
     }
 
-    // Show this building's interior at its stored position
-    building.interiorGroup.visible = true;
-    building.interiorGroup.position.y = INTERIOR_Y;
+    // Remove building physics collider
+    this.physicsWorld.removeBody(building.collider);
 
-    // Add a physics floor at interior level so player doesn't fall
-    this.interiorFloorBody = new CANNON.Body({
-      type: CANNON.Body.STATIC,
-      shape: new CANNON.Plane(),
+    // --- Show interior at ground level, 2x scaled, with rotation ---
+    const S = 2; // interior scale multiplier
+    const ig = building.interiorGroup;
+    ig.visible = true;
+    ig.position.set(def.x, 0, def.z);
+    ig.rotation.y = def.rotY;
+    ig.scale.set(S, 1, S); // 2x wider & deeper, same height
+
+    // Hide ceiling so camera sees inside from above
+    ig.traverse((child) => {
+      if (child.name === 'ceiling') child.visible = false;
     });
-    this.interiorFloorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    this.interiorFloorBody.position.set(0, INTERIOR_Y, 0);
-    this.physicsWorld.addBody(this.interiorFloorBody);
 
-    // Teleport player to the door area inside (front of interior, on the ground)
-    this.playerBody.position.set(
-      building.interiorGroup.position.x,
-      INTERIOR_Y + 0.7,
-      building.interiorGroup.position.z + building.def.depth / 2 - 1.5
+    ig.updateMatrixWorld(true);
+
+    // --- Add a front wall to close off the room (in scaled local space) ---
+    const inW = def.width - 0.4;
+    const inD = def.depth - 0.4;
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0xb0a090,
+      side: THREE.DoubleSide,
+      roughness: 0.85,
+    });
+    this.frontWallMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(inW, def.height),
+      wallMat
     );
+    this.frontWallMesh.position.set(0, def.height / 2, inD / 2);
+    ig.add(this.frontWallMesh);
+
+    // --- Add physics walls (4 sides, using SCALED dimensions) ---
+    const halfW = (def.width * S) / 2;
+    const halfH = def.height / 2;
+    const halfD = (def.depth * S) / 2;
+    const t = 0.15;
+
+    this.wallBody = new CANNON.Body({ type: CANNON.Body.STATIC });
+    this.wallBody.addShape(
+      new CANNON.Box(new CANNON.Vec3(halfW, halfH, t)),
+      new CANNON.Vec3(0, halfH, -halfD)
+    );
+    this.wallBody.addShape(
+      new CANNON.Box(new CANNON.Vec3(halfW, halfH, t)),
+      new CANNON.Vec3(0, halfH, halfD)
+    );
+    this.wallBody.addShape(
+      new CANNON.Box(new CANNON.Vec3(t, halfH, halfD)),
+      new CANNON.Vec3(-halfW, halfH, 0)
+    );
+    this.wallBody.addShape(
+      new CANNON.Box(new CANNON.Vec3(t, halfH, halfD)),
+      new CANNON.Vec3(halfW, halfH, 0)
+    );
+    this.wallBody.position.set(def.x, 0, def.z);
+    this.wallBody.quaternion.setFromEuler(0, def.rotY, 0);
+    this.physicsWorld.addBody(this.wallBody);
+
+    // --- Teleport player inside (center of scaled room) ---
+    this.playerBody.position.set(def.x, 0.7, def.z);
     this.playerBody.velocity.set(0, 0, 0);
 
-    // Snap camera offset and position instantly so there's no slow drift
-    this.cameraSystem.offset.copy(this.interiorCameraOffset);
+    this.playerMesh.position.set(
+      this.playerBody.position.x,
+      this.playerBody.position.y - 0.7,
+      this.playerBody.position.z
+    );
+
+    // --- Fixed corner camera (using scaled room size) ---
+    const scaledW = def.width * S;
+    const scaledD = def.depth * S;
+    const cornerLocal = new THREE.Vector3(-scaledW / 2 + 0.5, def.height - 0.3, scaledD / 2 - 0.5);
+    cornerLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), def.rotY);
+    const centerLocal = new THREE.Vector3(0, 0.5, 0);
+    centerLocal.applyAxisAngle(new THREE.Vector3(0, 1, 0), def.rotY);
+
+    this.cameraSystem.fixedPosition = new THREE.Vector3(
+      def.x + cornerLocal.x,
+      cornerLocal.y,
+      def.z + cornerLocal.z
+    );
+    this.cameraSystem.fixedLookAt = new THREE.Vector3(
+      def.x + centerLocal.x,
+      centerLocal.y,
+      def.z + centerLocal.z
+    );
+    this.savedFov = 45;
+    this.cameraSystem.setFov(50);
     this.cameraSystem.snap();
 
     this.currentBuilding = building;
-    EventBus.emit('player:enter-building', { name: building.def.name });
+    EventBus.emit('player:enter-building', { name: def.name });
 
     // Fade from black
     this.fadeOverlay.classList.remove('active');
@@ -178,21 +265,46 @@ export class InteriorManager {
     this.fadeOverlay.classList.add('active');
     await this.wait(350);
 
-    // Hide interior
-    building.interiorGroup.visible = false;
+    // --- Clean up interior ---
+    const ig = building.interiorGroup;
 
-    // Remove interior floor collider
-    if (this.interiorFloorBody) {
-      this.physicsWorld.removeBody(this.interiorFloorBody);
-      this.interiorFloorBody = null;
+    // Remove front wall
+    if (this.frontWallMesh) {
+      ig.remove(this.frontWallMesh);
+      this.frontWallMesh.geometry.dispose();
+      (this.frontWallMesh.material as THREE.Material).dispose();
+      this.frontWallMesh = null;
     }
 
-    // Show all exteriors
+    // Remove physics walls
+    if (this.wallBody) {
+      this.physicsWorld.removeBody(this.wallBody);
+      this.wallBody = null;
+    }
+
+    // Hide interior, restore ceiling, stash underground, return to village group
+    ig.visible = false;
+    ig.traverse((child) => {
+      if (child.name === 'ceiling') child.visible = true;
+    });
+    ig.position.y = INTERIOR_Y;
+    ig.rotation.y = 0;
+    ig.scale.set(1, 1, 1);
+
+    // --- Restore outside world ---
+    this.terrain.visible = true;
+    this.scene.fog = this.savedFog;
+    if (this.savedBackground) {
+      this.scene.background = this.savedBackground;
+    }
+
     for (const b of this.village.buildings) {
       b.exteriorGroup.visible = true;
     }
+    building.exteriorGroup.visible = true;
+    this.physicsWorld.addBody(building.collider);
 
-    // Teleport player to door position outside
+    // Teleport player outside
     this.playerBody.position.set(
       building.doorPosition.x,
       1.5,
@@ -200,7 +312,16 @@ export class InteriorManager {
     );
     this.playerBody.velocity.set(0, 0, 0);
 
-    // Snap camera offset and position instantly back to exterior
+    this.playerMesh.position.set(
+      this.playerBody.position.x,
+      this.playerBody.position.y - 0.7,
+      this.playerBody.position.z
+    );
+
+    // Restore exterior camera
+    this.cameraSystem.fixedPosition = null;
+    this.cameraSystem.fixedLookAt = null;
+    this.cameraSystem.setFov(this.savedFov);
     const extOffset = new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z);
     this.cameraSystem.offset.copy(extOffset);
     this.cameraSystem.snap();
@@ -218,7 +339,7 @@ export class InteriorManager {
   /** Get current camera offset based on inside/outside state */
   getCameraOffset(): THREE.Vector3 {
     if (this.currentBuilding) {
-      return this.interiorCameraOffset;
+      return new THREE.Vector3(0, 0, 0); // fixed camera mode, offset unused
     }
     return new THREE.Vector3(CAMERA_OFFSET_X, CAMERA_OFFSET_Y, CAMERA_OFFSET_Z);
   }

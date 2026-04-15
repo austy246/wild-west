@@ -14,13 +14,13 @@ const BUILDING_DEFS: BuildingDef[] = [
   },
   {
     name: 'Dům 1',
-    width: 5, depth: 5, height: 3.5,
+    width: 10, depth: 10, height: 3.5,
     wallColor: 0xa0825a, roofColor: 0x7a6242,
     x: -10, z: 24, rotY: Math.PI,
   },
   {
     name: 'Dům 2',
-    width: 5, depth: 5, height: 3.5,
+    width: 10, depth: 10, height: 3.5,
     wallColor: 0xb89070, roofColor: 0x8a6a50,
     x: -17, z: 24, rotY: Math.PI,
   },

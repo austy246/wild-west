@@ -946,35 +946,35 @@ function buildInterior(def: BuildingDef): THREE.Group {
   group.add(floor);
 
   // Walls (3 walls — front is open / has door)
+  const wallThick = 0.3;
   const wallMat = new THREE.MeshStandardMaterial({
     color: def.wallColor,
-    side: THREE.DoubleSide,
     roughness: 0.85,
   });
 
   // Back wall
-  const backWallGeo = new THREE.PlaneGeometry(inW, height);
-  const backWall = new THREE.Mesh(backWallGeo, wallMat);
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(inW, height, wallThick), wallMat);
   backWall.position.set(0, height / 2, -inD / 2);
+  backWall.castShadow = true;
   group.add(backWall);
 
   // Left wall
-  const sideWallGeo = new THREE.PlaneGeometry(inD, height);
-  const leftWall = new THREE.Mesh(sideWallGeo, wallMat);
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, inD), wallMat);
   leftWall.position.set(-inW / 2, height / 2, 0);
-  leftWall.rotation.y = Math.PI / 2;
+  leftWall.castShadow = true;
   group.add(leftWall);
 
   // Right wall
-  const rightWall = new THREE.Mesh(sideWallGeo, wallMat);
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, inD), wallMat);
   rightWall.position.set(inW / 2, height / 2, 0);
-  rightWall.rotation.y = -Math.PI / 2;
+  rightWall.castShadow = true;
   group.add(rightWall);
 
   // Ceiling
   const ceilGeo = new THREE.PlaneGeometry(inW, inD);
   const ceilMat = new THREE.MeshStandardMaterial({ color: 0x6b5b4f, side: THREE.DoubleSide });
   const ceil = new THREE.Mesh(ceilGeo, ceilMat);
+  ceil.name = 'ceiling';
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = height;
   group.add(ceil);
@@ -1016,20 +1016,21 @@ function buildSheriffInterior(def: BuildingDef): THREE.Group {
   floor.receiveShadow = true;
   group.add(floor);
 
-  // Walls (3 walls)
-  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(inW, height), wallMat);
+  // Walls (3 thick walls)
+  const wallThick = 0.3;
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(inW, height, wallThick), wallMat);
   backWall.position.set(0, height / 2, -inD / 2);
+  backWall.castShadow = true;
   group.add(backWall);
 
-  const sideWallGeo = new THREE.PlaneGeometry(inD, height);
-  const leftWall = new THREE.Mesh(sideWallGeo, wallMat);
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, inD), wallMat);
   leftWall.position.set(-inW / 2, height / 2, 0);
-  leftWall.rotation.y = Math.PI / 2;
+  leftWall.castShadow = true;
   group.add(leftWall);
 
-  const rightWall = new THREE.Mesh(sideWallGeo, wallMat);
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, inD), wallMat);
   rightWall.position.set(inW / 2, height / 2, 0);
-  rightWall.rotation.y = -Math.PI / 2;
+  rightWall.castShadow = true;
   group.add(rightWall);
 
   // Ceiling
@@ -1037,6 +1038,7 @@ function buildSheriffInterior(def: BuildingDef): THREE.Group {
     new THREE.PlaneGeometry(inW, inD),
     new THREE.MeshStandardMaterial({ color: 0x6b5b4f, side: THREE.DoubleSide })
   );
+  ceil.name = 'ceiling';
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = height;
   group.add(ceil);
@@ -1872,6 +1874,87 @@ function addStableFurniture(g: THREE.Group, def: BuildingDef): void {
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, 0.38, inD / 2 - 1.5);
   g.add(water);
+
+  // --- Horses in stalls ---
+  const horseBrown = new THREE.MeshStandardMaterial({ color: 0x6b3a1f, roughness: 0.85 });
+  const horseDark = new THREE.MeshStandardMaterial({ color: 0x3e2210, roughness: 0.85 });
+  const horseCreamy = new THREE.MeshStandardMaterial({ color: 0xc4a56a, roughness: 0.85 });
+  const horseMats = [horseBrown, horseDark, horseCreamy];
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0x1a1008, roughness: 0.9 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+  for (let i = 0; i < stallCount; i++) {
+    const stallCenterX = -inW / 2 + i * stallW + stallW / 2;
+    const mat = horseMats[i % horseMats.length];
+    const horse = new THREE.Group();
+
+    // Body
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, 0.9, 8), mat);
+    body.rotation.x = Math.PI / 2;
+    body.position.set(0, 0.75, 0);
+    body.castShadow = true;
+    horse.add(body);
+
+    // Neck
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.5, 6), mat);
+    neck.position.set(0, 1.0, -0.4);
+    neck.rotation.x = -0.5;
+    neck.castShadow = true;
+    horse.add(neck);
+
+    // Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.35), mat);
+    head.position.set(0, 1.15, -0.65);
+    head.rotation.x = -0.2;
+    head.castShadow = true;
+    horse.add(head);
+
+    // Ears
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.1, 4), mat);
+      ear.position.set(side * 0.06, 1.28, -0.58);
+      horse.add(ear);
+    }
+
+    // Eyes
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), eyeMat);
+      eye.position.set(side * 0.08, 1.17, -0.75);
+      horse.add(eye);
+    }
+
+    // Legs (4)
+    const legGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.55, 6);
+    const legPositions = [
+      [-0.12, 0.27, -0.3],
+      [0.12, 0.27, -0.3],
+      [-0.12, 0.27, 0.3],
+      [0.12, 0.27, 0.3],
+    ];
+    for (const [lx, ly, lz] of legPositions) {
+      const leg = new THREE.Mesh(legGeo, mat);
+      leg.position.set(lx, ly, lz);
+      leg.castShadow = true;
+      horse.add(leg);
+    }
+
+    // Tail
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.4, 5), tailMat);
+    tail.position.set(0, 0.8, 0.5);
+    tail.rotation.x = 0.6;
+    horse.add(tail);
+
+    // Mane
+    const mane = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.3), tailMat);
+    mane.position.set(0, 1.1, -0.25);
+    mane.rotation.x = -0.3;
+    horse.add(mane);
+
+    horse.position.set(stallCenterX, 0, -inD / 2 + 1.0);
+    // Face each horse slightly differently
+    horse.rotation.y = i === 1 ? Math.PI : 0;
+    g.add(horse);
+  }
 
   // --- Tools on wall (pitchfork, shovel) ---
   const toolMat = new THREE.MeshStandardMaterial({ color: 0x5d4037 });

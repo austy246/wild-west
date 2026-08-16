@@ -32,6 +32,9 @@ import { MaryCutscene } from './story/MaryCutscene';
 import { WagonCutscene } from './story/WagonCutscene';
 import { FlyerOverlay } from './ui/FlyerOverlay';
 import { MusicDirector } from './core/Music';
+import { TitleCard } from './ui/TitleCard';
+import { BurnedTown } from './story/BurnedTown';
+import { NorthRide } from './story/NorthRide';
 import { LightBudget } from './systems/LightBudget';
 import { QualityManager } from './systems/QualityManager';
 import { pruneSmallShadowCasters } from './systems/ShadowPruner';
@@ -54,6 +57,12 @@ export class Game {
   private wagonCutscene: WagonCutscene;
   private flyerOverlay: FlyerOverlay;
   private music: MusicDirector;
+  private titleCard: TitleCard;
+  private burnedTown: BurnedTown;
+  private northRide: NorthRide;
+  private hidePromptEl!: HTMLElement;
+  private eKeyWasDownHide = false;
+  private hidingInProgress = false;
   private sceneLights: SceneLights;
   private lightBudget!: LightBudget;
   private qualityManager!: QualityManager;
@@ -215,6 +224,15 @@ export class Game {
 
     // Score — starts here because the menu click counts as the user gesture
     // browsers require before any audio may play
+    // Chapter 4 — hiding out, and what's left afterwards
+    this.titleCard = new TitleCard();
+    this.burnedTown = new BurnedTown(this.engine.scene, this.village);
+    this.northRide = new NorthRide(this.engine.scene, this.engine.camera);
+    this.northRide.onArrive = () => {
+      EventBus.emit('location:reached', { location: 'north-cabin' });
+      this.showNotification('Došel jsi k domku. Uvnitř jsou samé blbiny.');
+    };
+
     this.music = new MusicDirector();
     this.music.start();
     this.dayNight.onChange = (night) => this.music.setMood(night ? 'night' : 'day');
@@ -427,6 +445,13 @@ export class Game {
       if (data.questId === 'mary-pendant') {
         return; // the cutscene shows its own messages
       }
+      if (data.questId === 'buy-supplies') {
+        // Supplies in hand — now get underground with everyone else
+        this.questManager.accept('hide-in-cellar');
+        this.sendTownToCellar();
+        this.showNotification('Máš zásoby. Všichni se schovávají ve sklepě za kostelem!');
+        return;
+      }
       this.showNotification(`Quest dokončen: ${data.name} (+${data.reward.lilky} lilků)`);
     });
 
@@ -546,6 +571,27 @@ export class Game {
     document.body.appendChild(this.flyerPromptEl);
 
     this.starvingVignetteEl = document.getElementById('starving-vignette');
+
+    // Cellar entrance prompt
+    this.hidePromptEl = document.createElement('div');
+    this.hidePromptEl.style.cssText = `
+      position: fixed;
+      bottom: 105px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      color: #ffd479;
+      padding: 6px 16px;
+      border: 2px solid #8B6508;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+    `;
+    this.hidePromptEl.textContent = 'Stiskni E a schovej se ve sklepě';
+    document.body.appendChild(this.hidePromptEl);
 
     // Rainbow overlay for the magic-herb trip (blends over the 3D canvas)
     this.tripOverlayEl = document.createElement('div');
@@ -785,6 +831,14 @@ export class Game {
           this.player.speedMultiplier = this.boughtHorseSpeed;
           this.player.body.linearDamping = 0;
           this.showNotification('Nasedl jsi na koně!');
+
+          // In the ruins, mounting up is the cue to get out of town
+          if (this.burnedTown.isBurned && !this.questManager.isActive('ride-north') &&
+              !this.questManager.isCompleted('ride-north')) {
+            this.questManager.accept('ride-north');
+            this.northRide.start();
+            setTimeout(() => this.showNotification('Jeď na sever!'), 900);
+          }
         }
       }
       this.eKeyWasDownHorse = eDown;
@@ -793,6 +847,27 @@ export class Game {
     // Picking a leaflet up off the road
     if (this.wagonCutscene.papers.length > 0 && !this.flyerOverlay.isOpen) {
       this.updateFlyerPickup(playerPos);
+    }
+
+    // Fires burn on, and the compass points the way out
+    this.burnedTown.update(dt);
+    this.northRide.update(playerPos);
+
+    // The cellar behind the church, when everyone is hiding down there
+    if (this.questManager.isActive('hide-in-cellar') && !this.player.controlLocked) {
+      const hdx = playerPos.x - BEHIND_CHURCH.x;
+      const hdz = playerPos.z - BEHIND_CHURCH.z;
+      const nearCellar = Math.sqrt(hdx * hdx + hdz * hdz) < 4;
+      this.hidePromptEl.style.display = nearCellar ? 'block' : 'none';
+      // The church door is within reach of this spot — don't let one press do both
+      this.interiorManager.doorInteractionBlocked = nearCellar;
+      const eDown = InputManager.isKeyDown('KeyE');
+      if (nearCellar && eDown && !this.eKeyWasDownHide) {
+        void this.hideInCellar();
+      }
+      this.eKeyWasDownHide = eDown;
+    } else if (!this.hidingInProgress && this.interiorManager.doorInteractionBlocked) {
+      this.interiorManager.doorInteractionBlocked = false;
     }
 
     // Behind-church trap → fall into the underground lab
@@ -976,6 +1051,90 @@ export class Game {
 
     // Default dialog
     this.dialogBox.showSimple(npc, npc.def.dialog);
+  }
+
+  /** Everyone left in town hurries to the cellar behind the church. */
+  private sendTownToCellar(): void {
+    for (const npc of this.npcs) {
+      if (!npc.mesh.visible || npc.def.id === 'wazovsky') continue;
+      npc.sendHome(
+        [
+          new THREE.Vector3(0, 0, npc.mesh.position.z),
+          new THREE.Vector3(0, 0, -26),
+          new THREE.Vector3(BEHIND_CHURCH.x, 0, BEHIND_CHURCH.z),
+        ],
+        () => { npc.fallAsleep(); npc.mesh.visible = false; },
+        4.5 // they're not dawdling
+      );
+    }
+  }
+
+  /**
+   * Climb down after them. Forty hours pass, and the town that comes back is
+   * not the one that went under.
+   */
+  private async hideInCellar(): Promise<void> {
+    this.player.controlLocked = true;
+    this.hidingInProgress = true;
+    // Hold the church door shut for the whole sequence — the key that starts
+    // this is still down, and the door is close enough to answer it
+    this.interiorManager.doorInteractionBlocked = true;
+    this.hidePromptEl.style.display = 'none';
+    EventBus.emit('location:reached', { location: 'church-cellar' });
+
+    const fade = document.getElementById('fade-overlay');
+    fade?.classList.add('active');
+    await this.wait(1200);
+
+    await this.titleCard.show('O 40 HODIN POZDĚJI');
+
+    // Daylight over a burned-out town
+    this.dayNight.setDay();
+    this.burnedTown.burn();
+
+    // Everyone climbs back out with you
+    for (const npc of this.npcs) {
+      if (npc.def.id === 'wazovsky') continue;
+      npc.mesh.position.set(
+        BEHIND_CHURCH.x + (Math.random() - 0.5) * 6,
+        0,
+        BEHIND_CHURCH.z + 3 + Math.random() * 4
+      );
+      npc.mesh.visible = true;
+      npc.wakeUp();
+    }
+
+    this.player.body.position.set(BEHIND_CHURCH.x, 1.5, BEHIND_CHURCH.z + 4);
+    this.player.body.velocity.set(0, 0, 0);
+    this.cameraSystem.snap();
+
+    // A horse waiting by the church — you'll need it
+    this.spawnEscapeHorse();
+
+    fade?.classList.remove('active');
+    await this.wait(800);
+    this.player.controlLocked = false;
+    this.hidingInProgress = false;
+    this.interiorManager.doorInteractionBlocked = false;
+
+    this.showNotification('Město je vypálené...');
+    await this.wait(2800);
+    this.showNotification('Nasedni na koně.');
+  }
+
+  /** Put a saddled horse by the church so the ride north is always possible. */
+  private spawnEscapeHorse(): void {
+    if (this.boughtHorseMesh) this.engine.scene.remove(this.boughtHorseMesh);
+    const mount = this.village.createRideableHorse(0x6b4423);
+    mount.position.set(BEHIND_CHURCH.x + 3, 0, BEHIND_CHURCH.z + 4);
+    mount.userData.dynamic = true;
+    this.engine.scene.add(mount);
+    this.boughtHorseMesh = mount;
+    this.boughtHorseSpeed = 2.2;
+    this.ridingHorse = false;
+    // Only swallow the press that's happening right now (the one that climbed
+    // down into the cellar) — a fresh press should mount on the first try
+    this.eKeyWasDownHorse = InputManager.isKeyDown('KeyE');
   }
 
   /**

@@ -19,7 +19,12 @@ export const PHYSICS_TIMESTEP = 1 / 60;
 
 // World
 export const VILLAGE_SIZE = 80;
-export const GROUND_SIZE = 120;
+/**
+ * The desert has to reach a long way past town now — the ride north to the
+ * cabin leaves the village far behind, and beyond this plane there is nothing
+ * to stand on but sky.
+ */
+export const GROUND_SIZE = 2600;
 
 // Colors
 export const SKY_COLOR = 0x87ceeb;

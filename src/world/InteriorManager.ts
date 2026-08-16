@@ -33,6 +33,13 @@ export class InteriorManager {
   private horseBuyEKeyWasDown = false;
   private isTransitioning = false;
 
+  /**
+   * Set while another interaction owns the E key at this spot — the cellar
+   * behind the church sits within door range of the church itself, and without
+   * this the one press would both hide the player and walk him inside.
+   */
+  doorInteractionBlocked = false;
+
   // Temporary objects created when entering a building
   private wallBody: CANNON.Body | null = null;
   private furnitureBodies: CANNON.Body[] = [];
@@ -339,6 +346,10 @@ export class InteriorManager {
     } else {
       // Outside — check proximity to any door
       this.horsePromptEl.style.display = 'none';
+      if (this.doorInteractionBlocked) {
+        this.promptEl.style.display = 'none';
+        return;
+      }
       const nearBuilding = this.village.findNearestDoor(playerPos, DOOR_INTERACT_DIST);
       if (nearBuilding) {
         this.promptEl.textContent = `Stiskni E → ${nearBuilding.def.name}`;

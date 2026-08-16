@@ -194,4 +194,28 @@ export const QUESTS: QuestDef[] = [
     reward: { lilky: 0 },
     isRepeatable: false,
   },
+  {
+    id: 'hide-in-cellar',
+    name: 'Schovej se ve sklepě',
+    description: 'Všichni se schovávají ve sklepě za kostelem. Běž tam za nimi, než padne noc.',
+    type: 'collection',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'reach', target: 'church-cellar', description: 'Schovej se ve sklepě za kostelem', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
+  {
+    id: 'ride-north',
+    name: 'Jeď na sever',
+    description: 'Z města nezbylo nic. Nasedni na koně a jeď na sever — kompas ti ukáže směr.',
+    type: 'collection',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'reach', target: 'north-cabin', description: 'Dojeď k domku na severu', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
 ];

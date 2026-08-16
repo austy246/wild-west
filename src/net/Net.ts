@@ -19,7 +19,37 @@ import Peer, { DataConnection } from 'peerjs';
 const ID_PREFIX = 'wildwest-';
 const MAX_PLAYERS = 3;
 /** Give up on the broker after this long and let them play alone */
-const CONNECT_TIMEOUT_MS = 12000;
+const CONNECT_TIMEOUT_MS = 20000;
+
+/**
+ * How two browsers on different networks find a way through to each other.
+ *
+ * On one wifi it's easy — the machines can see each other directly. Across the
+ * internet both sides sit behind a router doing NAT, which by default lets
+ * nothing in from outside. STUN servers solve the easy half by telling each
+ * side what its public address looks like. That's enough for most home
+ * routers, but mobile networks, school and office wifi often use a stricter
+ * kind of NAT that no amount of address-swapping gets through — those need
+ * TURN, a relay that both sides can reach and that passes the traffic along.
+ *
+ * The relay below is a free public one. It works, but it is somebody else's
+ * free service with its own limits, so it is listed last: it's only used when
+ * a direct route genuinely can't be found.
+ */
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
 export type NetRole = 'host' | 'client';
 
@@ -112,7 +142,9 @@ export class Net {
     // Clients get a broker-assigned id; only the host needs a memorable one
     await this.openPeer();
 
-    const conn = this.peer!.connect(ID_PREFIX + code, { reliable: false });
+    // Reliable: positions go out only ten times a second, so the overhead is
+    // nothing, and it means chat lines and goodbyes can't quietly vanish
+    const conn = this.peer!.connect(ID_PREFIX + code, { reliable: true });
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
@@ -155,7 +187,8 @@ export class Net {
 
   private openPeer(id?: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.peer = id ? new Peer(id) : new Peer();
+      const options = { config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 4 } };
+      this.peer = id ? new Peer(id, options) : new Peer(options);
 
       const timer = setTimeout(
         () => reject(new Error('Server pro spojení hráčů neodpovídá.')),

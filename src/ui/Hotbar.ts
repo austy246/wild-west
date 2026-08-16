@@ -3,7 +3,7 @@ import { EventBus } from '../core/EventBus';
 const SLOT_COUNT = 7;
 
 /** Items that never go into the inventory */
-const EXCLUDED_ITEMS = new Set(['save-elixir']);
+const EXCLUDED_ITEMS = new Set(['save-elixir', 'werewolf-flyer']);
 
 const ITEM_NAMES: Record<string, string> = {
   'gold-nugget': 'Zlatý nugget',

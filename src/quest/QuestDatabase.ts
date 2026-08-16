@@ -150,4 +150,28 @@ export const QUESTS: QuestDef[] = [
     reward: { lilky: 0 },
     isRepeatable: false,
   },
+  {
+    id: 'sleep-at-wazovsky',
+    name: 'Vyspi se',
+    description: 'Je noc a všichni už spí. Taky by ses mohl vyspat — zajdi za Wazovským na kupku sena.',
+    type: 'delivery',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'deliver', target: 'wazovsky', description: 'Vyspi se u Wazovského', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
+  {
+    id: 'werewolf-flyer',
+    name: 'Co to bylo za povyk?',
+    description: 'Z vozu rozházeli po cestě letáky. Zvedni jeden a přečti si ho.',
+    type: 'collection',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'collect', target: 'werewolf-flyer', description: 'Zvedni leták', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
 ];

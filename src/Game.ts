@@ -29,6 +29,8 @@ import { createLighting, followSun, SceneLights } from './world/Lighting';
 import { DayNight } from './world/DayNight';
 import { Bedtime } from './world/Bedtime';
 import { MaryCutscene } from './story/MaryCutscene';
+import { WagonCutscene } from './story/WagonCutscene';
+import { FlyerOverlay } from './ui/FlyerOverlay';
 import { LightBudget } from './systems/LightBudget';
 import { QualityManager } from './systems/QualityManager';
 import { pruneSmallShadowCasters } from './systems/ShadowPruner';
@@ -48,6 +50,8 @@ export class Game {
   private dayNight: DayNight;
   private bedtime: Bedtime;
   private maryCutscene!: MaryCutscene;
+  private wagonCutscene: WagonCutscene;
+  private flyerOverlay: FlyerOverlay;
   private sceneLights: SceneLights;
   private lightBudget!: LightBudget;
   private qualityManager!: QualityManager;
@@ -88,6 +92,8 @@ export class Game {
 
   // Mary story: night falls once the player steps back outside with the pendant
   private nightPending = false;
+  private flyerPromptEl!: HTMLElement;
+  private eKeyWasDownFlyer = false;
 
   // Bought stable horse (rideable)
   private boughtHorseMesh: THREE.Group | null = null;
@@ -195,6 +201,13 @@ export class Game {
     // Day/night — night is switched on after Mary hands over the pendant
     this.dayNight = new DayNight(this.engine.scene);
     this.bedtime = new Bedtime(this.village);
+
+    // Chapter 3 — the wagon that brings the werewolf warning
+    this.wagonCutscene = new WagonCutscene(this.engine.scene, this.player, this.village);
+    this.wagonCutscene.onFinished = () => {
+      this.questManager.accept('werewolf-flyer');
+    };
+    this.flyerOverlay = new FlyerOverlay();
 
     // Mary's escort cutscene
     const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');
@@ -412,6 +425,11 @@ export class Game {
       if (mary) mary.mesh.position.set(mary.def.x, 0, mary.def.z);
       this.bedtime.start(this.npcs);
       this.showNotification('Setmělo se... lidi jdou spát.');
+      // Nothing left to do tonight but sleep it off at Wazovský's
+      this.questManager.accept('sleep-at-wazovsky');
+      setTimeout(() => {
+        this.showNotification('Taky by ses mohl vyspat. Zajdi za Wazovským.');
+      }, 2600);
     });
 
     // Whoever sleeps here becomes visible while the player is inside
@@ -489,6 +507,27 @@ export class Game {
     `;
     document.body.appendChild(this.unicornPromptEl);
 
+    // Leaflet pickup prompt
+    this.flyerPromptEl = document.createElement('div');
+    this.flyerPromptEl.style.cssText = `
+      position: fixed;
+      bottom: 105px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: #f2ead6;
+      padding: 6px 16px;
+      border: 2px solid #8b7355;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+    `;
+    this.flyerPromptEl.textContent = 'Stiskni E pro zvednutí letáku';
+    document.body.appendChild(this.flyerPromptEl);
+
     // Rainbow overlay for the magic-herb trip (blends over the 3D canvas)
     this.tripOverlayEl = document.createElement('div');
     this.tripOverlayEl.id = 'trip-overlay';
@@ -508,6 +547,18 @@ export class Game {
 
     // Input
     InputManager.poll();
+
+    // The wagon thunders past — watch, that's all
+    if (this.wagonCutscene.active) {
+      this.wagonCutscene.update(dt);
+      this.player.update(dt);
+      for (const npc of this.npcs) npc.update(dt);
+      followSun(this.sceneLights.sun, this.player.mesh.position);
+      this.lightBudget.update(dt, this.player.mesh.position);
+      this.cameraSystem.update(dt);
+      this.engine.render();
+      return;
+    }
 
     // Cutscene: the script drives everything, normal gameplay is suspended
     if (this.maryCutscene?.active) {
@@ -712,6 +763,11 @@ export class Game {
       this.eKeyWasDownHorse = eDown;
     }
 
+    // Picking a leaflet up off the road
+    if (this.wagonCutscene.papers.length > 0 && !this.flyerOverlay.isOpen) {
+      this.updateFlyerPickup(playerPos);
+    }
+
     // Behind-church trap → fall into the underground lab
     if (
       this.questManager.isActive('wazovsky-supplies') &&
@@ -775,6 +831,26 @@ export class Game {
             },
           },
           { label: 'Teď ne', action: () => this.dialogBox.close() },
+        ]
+      );
+      return;
+    }
+
+    // Wazovský at night — the place to sleep until morning. Sits above the
+    // generic hand-in, which would otherwise treat sleeping as a delivery.
+    if (npc.def.id === 'wazovsky' && this.questManager.isActive('sleep-at-wazovsky')) {
+      this.dialogBox.show(
+        npc,
+        'Klídek, kámo. Seno je měkký a je ho dost pro dva. Lehni si vedle a nech tu noc bejt.',
+        [
+          {
+            label: 'Vyspat se',
+            action: () => {
+              this.dialogBox.close();
+              void this.sleepUntilMorning();
+            },
+          },
+          { label: 'Ještě ne', action: () => this.dialogBox.close() },
         ]
       );
       return;
@@ -873,6 +949,95 @@ export class Game {
 
     // Default dialog
     this.dialogBox.showSimple(npc, npc.def.dialog);
+  }
+
+  /**
+   * Walk over a leaflet and press E to read it. Reading it clears the rest off
+   * the road and sends Wazovský packing.
+   */
+  private updateFlyerPickup(playerPos: THREE.Vector3): void {
+    let nearest: THREE.Group | null = null;
+    let nearestDist = 2.2;
+    for (const paper of this.wagonCutscene.papers) {
+      const dx = paper.position.x - playerPos.x;
+      const dz = paper.position.z - playerPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = paper;
+      }
+    }
+
+    if (!nearest) {
+      this.flyerPromptEl.style.display = 'none';
+      this.eKeyWasDownFlyer = InputManager.isKeyDown('KeyE');
+      return;
+    }
+
+    this.flyerPromptEl.style.display = 'block';
+    const eDown = InputManager.isKeyDown('KeyE');
+    if (eDown && !this.eKeyWasDownFlyer) {
+      this.flyerPromptEl.style.display = 'none';
+      this.wagonCutscene.clearPapers();
+      EventBus.emit('item:collected', { itemType: 'werewolf-flyer' });
+      this.flyerOverlay.show(() => this.wazovskyLeaves());
+    }
+    this.eKeyWasDownFlyer = eDown;
+  }
+
+  /** After the warning sinks in, Wazovský packs up and bolts out of town. */
+  private wazovskyLeaves(): void {
+    const wazovsky = this.npcs.find((n) => n.def.id === 'wazovsky');
+    if (!wazovsky) return;
+
+    this.dialogBox.show(wazovsky, 'No nic... já už musím. Hodně štěstí, kámo.', [
+      {
+        label: 'Počkej!',
+        action: () => {
+          this.dialogBox.close();
+          // Up off the hay and out of town, then gone
+          wazovsky.mesh.rotation.x = 0;
+          wazovsky.mesh.position.y = 0;
+          wazovsky.sendHome(
+            [new THREE.Vector3(0, 0, 4), new THREE.Vector3(0, 0, 48)],
+            () => { wazovsky.fallAsleep(); wazovsky.mesh.visible = false; },
+            7 // he's not strolling, he's getting out of town
+          );
+          this.showNotification('Wazovský utekl z města.');
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Sleep on Wazovský's haystack until dawn, then let the wagon come through.
+   * The player wakes rested, the town wakes with him, and the warning arrives.
+   */
+  private async sleepUntilMorning(): Promise<void> {
+    this.player.controlLocked = true;
+    this.questManager.completeDelivery('wazovsky');
+
+    const fade = document.getElementById('fade-overlay');
+    fade?.classList.add('active');
+    await this.wait(2200); // a night passes
+
+    // Morning: daylight back, everyone spills out of their houses
+    this.dayNight.setDay();
+    this.bedtime.wakeEveryone();
+    this.combatSystem.healFull();
+    this.player.stamina = this.player.maxStamina;
+
+    fade?.classList.remove('active');
+    await this.wait(700);
+    this.showNotification('Ráno. Vyspal ses.');
+
+    await this.wait(1200);
+    this.player.controlLocked = false;
+    this.wagonCutscene.start();
+  }
+
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /** Start the magic-herb trip: refill everything and go rainbow for `seconds`. */

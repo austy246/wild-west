@@ -136,6 +136,26 @@ export class Bedtime {
     }
   }
 
+  /**
+   * Morning — everyone spills back out of their front door and carries on as
+   * usual. Called when the wagon comes through shouting.
+   */
+  wakeEveryone(): void {
+    for (const s of this.sleepers) {
+      const building = this.village.buildings.find((b) => b.def.name === s.buildingName);
+      const door = building?.doorPosition;
+      if (door) {
+        // Step out onto the street, spread a little so they don't overlap
+        const spread = (Math.random() - 0.5) * 1.5;
+        s.npc.mesh.position.set(door.x + spread, 0, door.z + spread);
+      }
+      s.npc.mesh.visible = true;
+      s.npc.wakeUp();
+    }
+    this.sleepers = [];
+    this.started = false;
+  }
+
   /** A random half-asleep grumble, stable per NPC so he doesn't flip-flop. */
   sleepyLine(npc: NPC): string {
     let hash = 0;

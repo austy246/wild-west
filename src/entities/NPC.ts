@@ -75,6 +75,7 @@ export class NPC {
   /** Route home at nightfall, and what to do once the door is reached */
   private route: THREE.Vector3[] = [];
   private routeIndex = 0;
+  private routeSpeed = GOHOME_SPEED;
   private onArriveHome: (() => void) | null = null;
 
   /** True once the NPC has gone indoors for the night */
@@ -172,17 +173,26 @@ export class NPC {
    * Send the NPC home for the night along a short route (last point is the
    * door). `onArrive` fires once he reaches it — that's when he goes inside.
    */
-  sendHome(route: THREE.Vector3[], onArrive: () => void): void {
+  sendHome(route: THREE.Vector3[], onArrive: () => void, speed = GOHOME_SPEED): void {
     if (route.length === 0) return;
     this.route = route;
     this.routeIndex = 0;
+    this.routeSpeed = speed;
     this.onArriveHome = onArrive;
     this.state = 'gohome';
   }
 
-  /** Mark as tucked in — stops all movement until the game is reloaded. */
+  /** Mark as tucked in — stops all movement until something wakes him. */
   fallAsleep(): void {
     this.state = 'asleep';
+    this.route = [];
+    this.onArriveHome = null;
+  }
+
+  /** Out of bed and back to normal wandering. */
+  wakeUp(): void {
+    this.state = 'idle';
+    this.stateTimer = randomRange(0.5, 2);
     this.route = [];
     this.onArriveHome = null;
   }
@@ -265,7 +275,7 @@ export class NPC {
       return;
     }
 
-    const step = Math.min(GOHOME_SPEED * dt, dist);
+    const step = Math.min(this.routeSpeed * dt, dist);
     this.mesh.position.x += (dx / dist) * step;
     this.mesh.position.z += (dz / dist) * step;
     this.mesh.rotation.y = Math.atan2(dx, dz);

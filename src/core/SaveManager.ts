@@ -20,6 +20,11 @@ export interface SaveData {
   unlockedWeapons: string[];
   currentWeapon: string;
   collectedItems: string[];
+  /** Mary story flags — optional so older saves still load */
+  story?: {
+    pendant: boolean;
+    night: boolean;
+  };
 }
 
 export class SaveManager {

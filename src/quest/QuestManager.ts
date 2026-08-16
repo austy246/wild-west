@@ -1,6 +1,7 @@
 import { QuestDef, QuestObjective, QuestStatus } from '../types/quests';
 import { QUESTS } from './QuestDatabase';
 import { EventBus } from '../core/EventBus';
+import { BANDITS_ENABLED } from '../entities/Bandit';
 
 interface ActiveQuest {
   def: QuestDef;
@@ -20,12 +21,34 @@ export class QuestManager {
     EventBus.on('item:collected', (data: { itemType: string }) => {
       this.updateObjectives('collect', data.itemType, 1);
     });
+
+    EventBus.on('location:reached', (data: { location: string }) => {
+      this.updateObjectives('reach', data.location, 1);
+    });
+  }
+
+  /** Is a quest currently active? */
+  isActive(questId: string): boolean {
+    return this.activeQuests.some((a) => a.def.id === questId);
+  }
+
+  /** Has a quest already been completed? */
+  isCompleted(questId: string): boolean {
+    return this.completedQuestIds.has(questId);
+  }
+
+  /** Cancel every active quest (e.g. "ostatní se vynulují"). */
+  clearActive(): void {
+    this.activeQuests = [];
+    EventBus.emit('quest:cleared', {});
   }
 
   /** Get quests available from a specific NPC */
   getAvailableQuests(npcId: string): QuestDef[] {
     return QUESTS.filter((q) => {
       if (q.giverId !== npcId) return false;
+      // No bandits in the world → don't offer quests that ask you to kill them
+      if (!BANDITS_ENABLED && q.type === 'combat') return false;
       // Already active?
       if (this.activeQuests.some((a) => a.def.id === q.id)) return false;
       // Already completed and not repeatable?

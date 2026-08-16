@@ -19,7 +19,18 @@ export class Player {
   maxStamina = PLAYER_MAX_STAMINA;
   isSprinting = false;
   speedMultiplier = 1;
+  isIndoors = false; // when true, movement is relative to the fixed interior camera
+  // Camera-relative movement basis for interiors (W = away from camera, D = screen right)
+  indoorForward = { x: 0, z: 1 };
+  indoorRight = { x: 1, z: 0 };
+  cameraMode = false; // when true, WASD controls camera instead of player
+  /** When true, input is ignored — the player is being moved by a cutscene */
+  controlLocked = false;
+  hunger = 100;
+  maxHunger = 100;
+  holdingFood = false; // true when holding food/drink/ammo (non-weapon items)
   private exhaustCooldown = 0; // seconds remaining before regen can start
+  private pendantMesh: THREE.Group | null = null;
 
   constructor() {
     this.mesh = this.createMesh();
@@ -250,7 +261,91 @@ export class Player {
     return body;
   }
 
+  /** Does the player already wear the dragon pendant? */
+  get hasPendant(): boolean {
+    return this.pendantMesh !== null;
+  }
+
+  /**
+   * Hang Mary's dragon pendant around the player's neck. A small glowing
+   * amulet on a cord, sitting on the chest just below the bandana.
+   */
+  showPendant(): void {
+    if (this.pendantMesh) return;
+
+    const group = new THREE.Group();
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xd4af37, metalness: 0.8, roughness: 0.25,
+      emissive: 0x6b4c00, emissiveIntensity: 0.6,
+    });
+    const gemMat = new THREE.MeshStandardMaterial({
+      color: 0x2ecc71, metalness: 0.2, roughness: 0.1,
+      emissive: 0x27ff7a, emissiveIntensity: 1.2,
+    });
+
+    // Cord around the neck
+    const cord = new THREE.Mesh(
+      new THREE.TorusGeometry(0.11, 0.008, 6, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2b1b0e, roughness: 0.9 })
+    );
+    cord.position.set(0, 1.19, 0.01);
+    cord.rotation.x = Math.PI / 2;
+    group.add(cord);
+
+    // Amulet plate — a small coiled dragon reads as a gold ring with a claw
+    const plate = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.014, 6, 16), goldMat);
+    plate.position.set(0, 1.06, 0.22);
+    group.add(plate);
+
+    // Dragon head + tail: two tapered cones biting around the ring
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.055, 6), goldMat);
+    head.position.set(0.02, 1.10, 0.235);
+    head.rotation.set(Math.PI / 2, 0, -0.6);
+    group.add(head);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.05, 6), goldMat);
+    tail.position.set(-0.03, 1.03, 0.235);
+    tail.rotation.set(Math.PI / 2, 0, 0.9);
+    group.add(tail);
+
+    // Glowing gem in the middle
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.022, 0), gemMat);
+    gem.position.set(0, 1.06, 0.235);
+    group.add(gem);
+
+    // Faint green glow so it reads at night
+    const glow = new THREE.PointLight(0x4dff9a, 1.2, 1.6, 2);
+    glow.position.set(0, 1.06, 0.26);
+    group.add(glow);
+
+    this.pendantMesh = group;
+    this.mesh.add(group);
+  }
+
   update(dt: number): void {
+    // Cutscene: the story script drives the body, input is ignored
+    if (this.controlLocked) {
+      this.body.velocity.x = 0;
+      this.body.velocity.z = 0;
+      this.mesh.position.set(
+        this.body.position.x,
+        this.body.position.y - 0.7,
+        this.body.position.z
+      );
+      return;
+    }
+
+    // In camera mode, skip player movement (camera handles WASD)
+    if (this.cameraMode) {
+      this.body.velocity.x = 0;
+      this.body.velocity.z = 0;
+      this.mesh.position.set(
+        this.body.position.x,
+        this.body.position.y - 0.7,
+        this.body.position.z
+      );
+      return;
+    }
+
     // WASD movement (keyboard) or joystick (touch)
     const moveDir = new CANNON.Vec3(0, 0, 0);
     const touch = InputManager.moveDirection;
@@ -298,9 +393,21 @@ export class Player {
 
     const speed = (this.isSprinting ? PLAYER_SPRINT_SPEED : PLAYER_SPEED) * this.speedMultiplier;
 
+    // Indoors: movement is relative to the fixed corner camera, so W always
+    // moves away from the camera (into the room) regardless of building rotation.
+    if (this.isIndoors && isMoving) {
+      const forwardAmount = -moveDir.z; // W => +1 (away from camera)
+      const rightAmount = moveDir.x;    // D => +1 (screen right)
+      const wx = forwardAmount * this.indoorForward.x + rightAmount * this.indoorRight.x;
+      const wz = forwardAmount * this.indoorForward.z + rightAmount * this.indoorRight.z;
+      moveDir.x = wx;
+      moveDir.z = wz;
+    }
+
     // Normalize so diagonal movement isn't faster
     if (isMoving) {
-      moveDir.scale(1 / len, moveDir);
+      const newLen = moveDir.length();
+      moveDir.scale(1 / newLen, moveDir);
       this.body.velocity.x = moveDir.x * speed;
       this.body.velocity.z = moveDir.z * speed;
 

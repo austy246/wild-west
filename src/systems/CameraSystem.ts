@@ -6,6 +6,7 @@ import {
   CAMERA_LERP_SPEED,
 } from '../utils/constants';
 import { lerp } from '../utils/math';
+import { InputManager } from '../core/InputManager';
 
 export class CameraSystem {
   private camera: THREE.PerspectiveCamera;
@@ -18,6 +19,10 @@ export class CameraSystem {
   fixedPosition: THREE.Vector3 | null = null;
   /** When set, camera looks at this fixed world point */
   fixedLookAt: THREE.Vector3 | null = null;
+
+  /** When true, WASD moves the camera instead of the player */
+  cameraControlMode = false;
+  private cameraSpeed = 8;
 
   constructor(camera: THREE.PerspectiveCamera, target: THREE.Object3D) {
     this.camera = camera;
@@ -33,6 +38,25 @@ export class CameraSystem {
   }
 
   update(dt: number): void {
+    // Camera control mode: WASD moves the fixed camera & lookAt
+    if (this.cameraControlMode && this.fixedPosition && this.fixedLookAt) {
+      let dx = 0, dz = 0;
+      if (InputManager.isKeyDown('KeyW') || InputManager.isKeyDown('ArrowUp')) dz -= 1;
+      if (InputManager.isKeyDown('KeyS') || InputManager.isKeyDown('ArrowDown')) dz += 1;
+      if (InputManager.isKeyDown('KeyA') || InputManager.isKeyDown('ArrowLeft')) dx -= 1;
+      if (InputManager.isKeyDown('KeyD') || InputManager.isKeyDown('ArrowRight')) dx += 1;
+
+      const move = this.cameraSpeed * dt;
+      this.fixedPosition.x += dx * move;
+      this.fixedPosition.z += dz * move;
+      this.fixedLookAt.x += dx * move;
+      this.fixedLookAt.z += dz * move;
+
+      // Up/down with Space/Shift
+      if (InputManager.isKeyDown('Space')) this.fixedPosition.y += move;
+      if (InputManager.isKeyDown('ShiftLeft') || InputManager.isKeyDown('ShiftRight')) this.fixedPosition.y -= move;
+    }
+
     if (this.fixedPosition) {
       // Fixed camera mode (interior corner camera)
       const t = 1 - Math.exp(-CAMERA_LERP_SPEED * dt);

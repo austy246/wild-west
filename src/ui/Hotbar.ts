@@ -9,6 +9,22 @@ const ITEM_NAMES: Record<string, string> = {
   'gold-nugget': 'Zlatý nugget',
   'herb': 'Bylinka',
   'wood': 'Dřevo',
+  'steak': 'Stejk',
+  'beans': 'Fazole',
+  'water': 'Voda',
+  'whisky': 'Whisky',
+  'ammo': 'Náboj',
+  'knife': 'Nůž',
+  'shotgun': 'Brokovnice',
+  'magic-plant': 'Kouzelná rostlinka',
+};
+
+const FOOD_HUNGER: Record<string, number> = {
+  'steak': 40,
+  'beans': 25,
+  'water': 15,
+  'whisky': 10,
+  'herb': 25,
 };
 
 interface SlotData {
@@ -155,12 +171,108 @@ function drawWoodIcon(): string {
   return c.toDataURL();
 }
 
+function drawFoodIcon(emoji: string): string {
+  const s = 48;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d')!;
+  ctx.font = '32px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, s / 2, s / 2);
+  return c.toDataURL();
+}
+
+function drawShotgunIcon(): string {
+  const s = 48;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d')!;
+  ctx.save();
+  ctx.translate(s / 2, s / 2);
+  ctx.rotate(-0.4);
+  // Barrel (double barrel)
+  ctx.fillStyle = '#555';
+  ctx.fillRect(-20, -4, 28, 3);
+  ctx.fillRect(-20, 1, 28, 3);
+  // Stock
+  ctx.fillStyle = '#6b3a1a';
+  ctx.beginPath();
+  ctx.moveTo(8, -5);
+  ctx.lineTo(22, -8);
+  ctx.lineTo(24, 8);
+  ctx.lineTo(8, 5);
+  ctx.closePath();
+  ctx.fill();
+  // Trigger guard
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(6, 6, 4, 0, Math.PI);
+  ctx.stroke();
+  // Trigger
+  ctx.fillStyle = '#444';
+  ctx.fillRect(5, 5, 2, 4);
+  // Barrel end
+  ctx.fillStyle = '#333';
+  ctx.fillRect(-22, -5, 3, 10);
+  ctx.restore();
+  return c.toDataURL();
+}
+
+/** Draw Wazovský's glowing magic plant */
+function drawMagicPlantIcon(): string {
+  const s = 48;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d')!;
+  ctx.translate(s / 2, s / 2 + 6);
+
+  // Glow behind the plant
+  const glow = ctx.createRadialGradient(0, -4, 1, 0, -4, 20);
+  glow.addColorStop(0, 'rgba(140, 255, 90, 0.55)');
+  glow.addColorStop(1, 'rgba(140, 255, 90, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, -4, 20, 0, Math.PI * 2); ctx.fill();
+
+  // Stem
+  ctx.strokeStyle = '#2e7d32';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0, 14); ctx.quadraticCurveTo(-2, 2, 0, -10); ctx.stroke();
+
+  // Serrated leaf fans
+  ctx.fillStyle = '#55dd44';
+  for (const [angle, lx, ly, len] of [
+    [-0.9, -7, -3, 9], [0.9, 7, -3, 9],
+    [-0.4, -6, 4, 7], [0.4, 6, 4, 7],
+    [0, 0, -13, 8],
+  ] as [number, number, number, number][]) {
+    ctx.save(); ctx.translate(lx, ly); ctx.rotate(angle);
+    ctx.beginPath(); ctx.ellipse(0, 0, len, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Bright bud
+  ctx.fillStyle = '#bfff3a';
+  ctx.beginPath(); ctx.arc(0, -12, 3, 0, Math.PI * 2); ctx.fill();
+
+  return c.toDataURL();
+}
+
 function getItemIcon(itemType: string): string {
   if (!iconCache[itemType]) {
     switch (itemType) {
       case 'gold-nugget': iconCache[itemType] = drawGoldNuggetIcon(); break;
       case 'herb': iconCache[itemType] = drawHerbIcon(); break;
       case 'wood': iconCache[itemType] = drawWoodIcon(); break;
+      case 'steak': iconCache[itemType] = drawFoodIcon('🥩'); break;
+      case 'beans': iconCache[itemType] = drawFoodIcon('🫘'); break;
+      case 'water': iconCache[itemType] = drawFoodIcon('💧'); break;
+      case 'whisky': iconCache[itemType] = drawFoodIcon('🥃'); break;
+      case 'ammo': iconCache[itemType] = drawFoodIcon('💥'); break;
+      case 'knife': iconCache[itemType] = drawFoodIcon('🔪'); break;
+      case 'shotgun': iconCache[itemType] = drawShotgunIcon(); break;
+      case 'magic-plant': iconCache[itemType] = drawMagicPlantIcon(); break;
       default: iconCache[itemType] = '';
     }
   }
@@ -216,7 +328,6 @@ export class Hotbar {
 
   private onItemCollected(itemType: string): void {
     if (EXCLUDED_ITEMS.has(itemType)) return;
-    if (itemType === 'herb' && !this.isFullHp()) return;
     this.addItem(itemType);
   }
 
@@ -234,7 +345,7 @@ export class Hotbar {
     el.textContent = item ? (ITEM_NAMES[item] ?? item) : 'Prázdné';
   }
 
-  private addItem(itemType: string): void {
+  addItem(itemType: string): void {
     for (let i = 0; i < SLOT_COUNT; i++) {
       if (this.inventory[i].itemType === itemType) {
         this.inventory[i].count++;
@@ -252,6 +363,21 @@ export class Hotbar {
         return;
       }
     }
+  }
+
+  /** Remove every stack of an item type (e.g. the plants handed to Wazovský). */
+  removeAllOf(itemType: string): number {
+    let removed = 0;
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      if (this.inventory[i].itemType === itemType) {
+        removed += this.inventory[i].count;
+        this.inventory[i].itemType = null;
+        this.inventory[i].count = 0;
+        this.renderSlot(i);
+      }
+    }
+    if (removed > 0) this.updateWeaponIndicator();
+    return removed;
   }
 
   private renderSlot(index: number): void {
@@ -287,5 +413,27 @@ export class Hotbar {
 
   getSelectedItem(): string | null {
     return this.inventory[this.selectedSlot]?.itemType ?? null;
+  }
+
+  isSelectedFood(): boolean {
+    const item = this.getSelectedItem();
+    return item !== null && (item in FOOD_HUNGER || item === 'ammo') && item !== 'shotgun';
+  }
+
+  /** Try to consume selected food item. Returns { hunger, name } or null. */
+  consumeSelected(): { hunger: number; name: string } | null {
+    const data = this.inventory[this.selectedSlot];
+    if (!data || !data.itemType || data.count <= 0) return null;
+    const hungerVal = FOOD_HUNGER[data.itemType];
+    if (!hungerVal) return null;
+    const name = ITEM_NAMES[data.itemType] ?? data.itemType;
+    data.count--;
+    if (data.count <= 0) {
+      data.itemType = null;
+      data.count = 0;
+    }
+    this.renderSlot(this.selectedSlot);
+    this.updateWeaponIndicator();
+    return { hunger: hungerVal, name };
   }
 }

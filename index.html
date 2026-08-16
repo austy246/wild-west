@@ -3,7 +3,48 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Wild West</title>
+
+  <title>Wild West — 3D westernová hra zdarma v prohlížeči</title>
+  <meta name="description" content="Wild West je česká 3D westernová hra, kterou hraješ přímo v prohlížeči zdarma a bez instalace. Prozkoumej městečko na Divokém západě, plň úkoly pro šerifa i Mary, kupuj koně a odhal tajemství pod kostelem." />
+  <meta name="author" content="austy" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#3e2723" />
+  <link rel="canonical" href="https://austy246.github.io/wild-west/" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Wild West" />
+  <meta property="og:locale" content="cs_CZ" />
+  <meta property="og:url" content="https://austy246.github.io/wild-west/" />
+  <meta property="og:title" content="Wild West — 3D westernová hra zdarma v prohlížeči" />
+  <meta property="og:description" content="Česká 3D westernová hra do prohlížeče. Úkoly, souboje, koně a tajemství pod kostelem — zdarma a bez instalace." />
+  <meta property="og:image" content="https://austy246.github.io/wild-west/og-image.png" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Wild West — 3D westernová hra zdarma v prohlížeči" />
+  <meta name="twitter:description" content="Česká 3D westernová hra do prohlížeče. Úkoly, souboje, koně a tajemství pod kostelem — zdarma a bez instalace." />
+  <meta name="twitter:image" content="https://austy246.github.io/wild-west/og-image.png" />
+
+  <!-- Structured data so search engines know this is a playable game -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "Wild West",
+    "url": "https://austy246.github.io/wild-west/",
+    "description": "Česká 3D westernová hra, kterou hraješ přímo v prohlížeči zdarma a bez instalace.",
+    "inLanguage": "cs",
+    "genre": ["Akční hra", "Adventura", "Western"],
+    "gamePlatform": "Webový prohlížeč",
+    "applicationCategory": "Game",
+    "operatingSystem": "Any",
+    "author": { "@type": "Person", "name": "austy" },
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CZK" }
+  }
+  </script>
+
   <link rel="stylesheet" href="/styles/main.css" />
   <link rel="stylesheet" href="/styles/hud.css" />
 </head>
@@ -15,6 +56,10 @@
     <div id="health-bar">
       <div id="health-bar-fill"></div>
       <span id="health-text">100 / 100</span>
+    </div>
+    <div id="hunger-bar">
+      <div id="hunger-bar-fill"></div>
+      <span id="hunger-text">100 / 100</span>
     </div>
     <div id="stamina-bar">
       <div id="stamina-bar-fill"></div>

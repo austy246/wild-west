@@ -1,6 +1,23 @@
 import * as THREE from 'three';
 import { EventBus } from '../core/EventBus';
 import { randomRange } from '../utils/math';
+import { BUILDING_DEFS } from '../world/Village';
+
+function isInsideBuilding(x: number, z: number): boolean {
+  const margin = 0.5;
+  for (const def of BUILDING_DEFS) {
+    const cos = Math.cos(-def.rotY);
+    const sin = Math.sin(-def.rotY);
+    const dx = x - def.x;
+    const dz = z - def.z;
+    const lx = dx * cos - dz * sin;
+    const lz = dx * sin + dz * cos;
+    if (Math.abs(lx) < def.width / 2 + margin && Math.abs(lz) < def.depth / 2 + margin) {
+      return true;
+    }
+  }
+  return false;
+}
 
 type BanditState = 'patrol' | 'alert' | 'chase' | 'attack' | 'dead';
 
@@ -300,8 +317,14 @@ export class Bandit {
         this.stateTimer = randomRange(2, 5);
       }
     } else {
-      this.mesh.position.x += (dx / dist) * PATROL_SPEED * dt;
-      this.mesh.position.z += (dz / dist) * PATROL_SPEED * dt;
+      const newX = this.mesh.position.x + (dx / dist) * PATROL_SPEED * dt;
+      const newZ = this.mesh.position.z + (dz / dist) * PATROL_SPEED * dt;
+      if (!isInsideBuilding(newX, newZ)) {
+        this.mesh.position.x = newX;
+        this.mesh.position.z = newZ;
+      } else {
+        this.pickPatrolTarget();
+      }
       this.mesh.rotation.y = Math.atan2(dx, dz);
     }
   }
@@ -325,8 +348,12 @@ export class Bandit {
       return;
     }
 
-    this.mesh.position.x += (dx / distToPlayer) * CHASE_SPEED * dt;
-    this.mesh.position.z += (dz / distToPlayer) * CHASE_SPEED * dt;
+    const newX = this.mesh.position.x + (dx / distToPlayer) * CHASE_SPEED * dt;
+    const newZ = this.mesh.position.z + (dz / distToPlayer) * CHASE_SPEED * dt;
+    if (!isInsideBuilding(newX, newZ)) {
+      this.mesh.position.x = newX;
+      this.mesh.position.z = newZ;
+    }
     this.mesh.rotation.y = Math.atan2(dx, dz);
   }
 
@@ -434,8 +461,14 @@ export class Bandit {
   }
 }
 
+/**
+ * Bandits are switched off for now — flip this back to `true` to bring them
+ * (and the combat quests that need them) back into the world.
+ */
+export const BANDITS_ENABLED = false;
+
 /** Bandit spawn points around the village outskirts */
-export const BANDIT_SPAWNS: BanditDef[] = [
+const BANDIT_SPAWN_POINTS: BanditDef[] = [
   { id: 'bandit-1', x: 35, z: 15, patrolRadius: 8 },
   { id: 'bandit-2', x: -35, z: -10, patrolRadius: 8 },
   { id: 'bandit-3', x: 30, z: -25, patrolRadius: 6 },
@@ -445,3 +478,5 @@ export const BANDIT_SPAWNS: BanditDef[] = [
   { id: 'bandit-7', x: 25, z: 35, patrolRadius: 5 },
   { id: 'bandit-8', x: -40, z: 0, patrolRadius: 8 },
 ];
+
+export const BANDIT_SPAWNS: BanditDef[] = BANDITS_ENABLED ? BANDIT_SPAWN_POINTS : [];

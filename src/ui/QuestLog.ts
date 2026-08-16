@@ -28,6 +28,7 @@ export class QuestLog {
     EventBus.on('quest:accepted', () => this.render());
     EventBus.on('quest:progress', () => this.render());
     EventBus.on('quest:completed', () => this.render());
+    EventBus.on('quest:cleared', () => this.render());
 
     this.render();
   }

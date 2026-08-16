@@ -5,7 +5,7 @@ import { Player } from '../entities/Player';
 import { Bandit } from '../entities/Bandit';
 import { Projectile } from '../entities/Projectile';
 
-export type WeaponType = 'fists' | 'lasso' | 'revolver' | 'rifle';
+export type WeaponType = 'fists' | 'lasso' | 'revolver' | 'rifle' | 'knife' | 'shotgun';
 
 interface WeaponDef {
   name: string;
@@ -22,6 +22,8 @@ const WEAPONS: Record<WeaponType, WeaponDef> = {
   lasso: { name: 'Laso', type: 'melee', damage: 5, range: 4, cooldown: 1.5, ammo: 0, reloadTime: 0 },
   revolver: { name: 'Revolver', type: 'ranged', damage: 25, range: 30, cooldown: 0.8, ammo: 6, reloadTime: 2 },
   rifle: { name: 'Puška', type: 'ranged', damage: 40, range: 50, cooldown: 1.5, ammo: 1, reloadTime: 3 },
+  knife: { name: 'Nůž', type: 'melee', damage: 20, range: 1.8, cooldown: 0.35, ammo: 0, reloadTime: 0 },
+  shotgun: { name: 'Brokovnice', type: 'ranged', damage: 15, range: 35, cooldown: 1.2, ammo: 2, reloadTime: 2.5 },
 };
 
 const PROJECTILE_HIT_DIST = 1;
@@ -104,8 +106,8 @@ export class CombatSystem {
       }
     }
 
-    // Left click attack
-    if (InputManager.leftClick && this.cooldownTimer <= 0 && !this.reloading) {
+    // Left click attack (not when holding food)
+    if (InputManager.leftClick && this.cooldownTimer <= 0 && !this.reloading && !this.player.holdingFood) {
       this.attack();
     }
 
@@ -246,9 +248,42 @@ export class CombatSystem {
     const playerPos = this.player.mesh.position.clone();
     const direction = this.getAimForward();
 
-    const projectile = new Projectile(playerPos, direction, weapon.damage);
-    this.projectiles.push(projectile);
-    this.scene.add(projectile.mesh);
+    if (this.currentWeapon === 'shotgun') {
+      // Shotgun: 7 pellets with wide spread + big yellow blast
+      const pelletCount = 7;
+      const spread = 0.35;
+      const baseAngle = Math.atan2(direction.x, direction.z);
+      for (let i = 0; i < pelletCount; i++) {
+        const offsetAngle = baseAngle + (i - (pelletCount - 1) / 2) * (spread * 2 / (pelletCount - 1));
+        const pelletDir = new THREE.Vector3(Math.sin(offsetAngle), 0, Math.cos(offsetAngle));
+        const proj = new Projectile(playerPos, pelletDir, weapon.damage);
+        this.projectiles.push(proj);
+        this.scene.add(proj.mesh);
+      }
+      // Big yellow shotgun blast effect
+      const blastGeo = new THREE.SphereGeometry(0.5, 12, 12);
+      const blastMat = new THREE.MeshBasicMaterial({ color: 0xffdd00, transparent: true, opacity: 0.8 });
+      const blast = new THREE.Mesh(blastGeo, blastMat);
+      blast.position.set(playerPos.x + direction.x * 0.8, 0.85, playerPos.z + direction.z * 0.8);
+      this.scene.add(blast);
+      const blastLight = new THREE.PointLight(0xffdd00, 5, 8);
+      blastLight.position.copy(blast.position);
+      this.scene.add(blastLight);
+      const blastStart = performance.now();
+      const animateBlast = () => {
+        const t = (performance.now() - blastStart) / 200;
+        if (t >= 1) { this.scene.remove(blast); this.scene.remove(blastLight); blastGeo.dispose(); blastMat.dispose(); return; }
+        blastMat.opacity = 0.8 * (1 - t);
+        blast.scale.setScalar(1 + t * 2);
+        blastLight.intensity = 5 * (1 - t);
+        requestAnimationFrame(animateBlast);
+      };
+      requestAnimationFrame(animateBlast);
+    } else {
+      const projectile = new Projectile(playerPos, direction, weapon.damage);
+      this.projectiles.push(projectile);
+      this.scene.add(projectile.mesh);
+    }
 
     // Rotate player to face aim direction
     this.player.mesh.rotation.y = Math.atan2(direction.x, direction.z);
@@ -278,6 +313,14 @@ export class CombatSystem {
     this.unlockedWeapons.add(type);
   }
 
+  addAmmo(count: number): void {
+    const weapon = WEAPONS[this.currentWeapon];
+    if (weapon.type === 'ranged') {
+      this.currentAmmo = Math.min(this.currentAmmo + count, weapon.ammo);
+      this.updateHUD();
+    }
+  }
+
   private takeDamage(amount: number): void {
     if (this.dead) return;
     this.playerHp = Math.max(0, this.playerHp - amount);
@@ -292,6 +335,12 @@ export class CombatSystem {
   private playerDeath(): void {
     this.dead = true;
     EventBus.emit('player:died');
+  }
+
+  /** Restore player to full health and refresh the HUD */
+  healFull(): void {
+    this.playerHp = this.playerMaxHp;
+    this.updateHUD();
   }
 
   /** Reset player to full health at spawn point */

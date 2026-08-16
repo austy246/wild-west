@@ -112,4 +112,42 @@ export const QUESTS: QuestDef[] = [
     reward: { lilky: 70 },
     isRepeatable: true,
   },
+  // --- Wazovský story chain (added programmatically, not offered by NPCs) ---
+  {
+    id: 'wazovsky-supplies',
+    name: 'Wazovského zásoby',
+    description: 'Wazovskému došly zásoby. Zajdi za kostel a nasbírej mu novou trávu.',
+    type: 'collection',
+    giverId: 'wazovsky-story', // no NPC has this id → never auto-offered
+    objectives: [
+      { type: 'reach', target: 'behind-church', description: 'Zajdi za kostel', amount: 1, current: 0 },
+      { type: 'collect', target: 'magic-plant', description: 'Nasbírej kouzelné rostlinky (0/5)', amount: 5, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
+  {
+    id: 'wazovsky-delivery',
+    name: 'Dones trávu Wazovskému',
+    description: 'Dones nasbírané kouzelné rostlinky panu Wazovskému na kupku sena.',
+    type: 'delivery',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'deliver', target: 'wazovsky', description: 'Dones rostlinku Wazovskému', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 800 },
+    isRepeatable: false,
+  },
+  {
+    id: 'mary-pendant',
+    name: 'Mary ti musí něco říct',
+    description: 'Wazovský tě posílá za Mary. Prý ti musí něco důležitého říct.',
+    type: 'delivery',
+    giverId: 'wazovsky-story',
+    objectives: [
+      { type: 'deliver', target: 'townsfolk2', description: 'Zajdi za Mary', amount: 1, current: 0 },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
 ];

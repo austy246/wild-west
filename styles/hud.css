@@ -8,6 +8,34 @@
   z-index: 10;
 }
 
+/* --- Magic herb ("kouzelná travička") rainbow trip --- */
+#game-canvas.trippy {
+  animation: trippyHue 2s linear infinite;
+}
+
+@keyframes trippyHue {
+  0%   { filter: hue-rotate(0deg) saturate(2) contrast(1.1); }
+  100% { filter: hue-rotate(360deg) saturate(2) contrast(1.1); }
+}
+
+#trip-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5; /* above canvas, below HUD (z-index 10) so bars stay readable */
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background: linear-gradient(120deg,
+    #ff0000, #ff8800, #ffee00, #00cc44, #00cccc, #0066ff, #8800ff, #ff0000);
+  background-size: 400% 400%;
+  animation: tripShift 3s linear infinite;
+}
+
+@keyframes tripShift {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 400% 50%; }
+}
+
 #health-bar {
   position: absolute;
   top: 16px;
@@ -38,12 +66,42 @@
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
 
+#hunger-bar {
+  position: absolute;
+  top: 76px;
+  left: 16px;
+  width: 200px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid #8B6508;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#hunger-bar-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to bottom, #e67e22, #d35400);
+  transition: width 0.3s ease;
+}
+
+#hunger-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
 #stamina-bar {
   position: absolute;
   top: 46px;
   left: 16px;
   width: 200px;
-  height: 18px;
+  height: 24px;
   background: rgba(0, 0, 0, 0.6);
   border: 2px solid #4a7a3a;
   border-radius: 4px;
@@ -63,7 +121,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: bold;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
@@ -179,13 +237,24 @@
 
   #stamina-bar {
     width: 130px;
-    height: 14px;
+    height: 18px;
     top: 32px;
     left: 10px;
   }
 
   #stamina-text {
-    font-size: 8px;
+    font-size: 9px;
+  }
+
+  #hunger-bar {
+    width: 130px;
+    height: 18px;
+    top: 54px;
+    left: 10px;
+  }
+
+  #hunger-text {
+    font-size: 9px;
   }
 
   #lilky-counter {

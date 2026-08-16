@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="10" fill="#3e2723"/>
+  <!-- cowboy hat -->
+  <ellipse cx="32" cy="42" rx="26" ry="7" fill="#8b5a2b"/>
+  <path d="M16 42c0-14 4-22 16-22s16 8 16 22z" fill="#5c3a1e"/>
+  <rect x="16" y="34" width="32" height="6" rx="3" fill="#2b1b0e"/>
+</svg>

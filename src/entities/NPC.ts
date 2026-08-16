@@ -1,5 +1,23 @@
 import * as THREE from 'three';
 import { randomRange } from '../utils/math';
+import { BUILDING_DEFS } from '../world/Village';
+
+/** Check if a point is inside any building footprint (with margin) */
+function isInsideBuilding(x: number, z: number): boolean {
+  const margin = 0.5;
+  for (const def of BUILDING_DEFS) {
+    const cos = Math.cos(-def.rotY);
+    const sin = Math.sin(-def.rotY);
+    const dx = x - def.x;
+    const dz = z - def.z;
+    const lx = dx * cos - dz * sin;
+    const lz = dx * sin + dz * cos;
+    if (Math.abs(lx) < def.width / 2 + margin && Math.abs(lz) < def.depth / 2 + margin) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // Road geometry — main road x=0 width 5, side paths at z=-24,-12,0,12,24 width 2.5
 const MAIN_ROAD_HALF_W = 2.5;
@@ -171,6 +189,12 @@ export class NPC {
         const onRoad = snapToRoad(newX, newZ);
         newX = onRoad.x;
         newZ = onRoad.z;
+        // Don't walk into buildings
+        if (isInsideBuilding(newX, newZ)) {
+          this.state = 'idle';
+          this.stateTimer = randomRange(1, 3);
+          return;
+        }
         this.mesh.position.x = newX;
         this.mesh.position.z = newZ;
         // Face movement direction

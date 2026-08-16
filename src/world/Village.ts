@@ -4,7 +4,7 @@ import { createBuilding, Building, BuildingDef } from './BuildingFactory';
 import { createRoads } from './Road';
 
 /** All building definitions for the village layout */
-const BUILDING_DEFS: BuildingDef[] = [
+export const BUILDING_DEFS: BuildingDef[] = [
   // --- South row (near town entrance, z ~ +24) ---
   {
     name: 'Saloon',
@@ -13,23 +13,17 @@ const BUILDING_DEFS: BuildingDef[] = [
     x: 10, z: 24, rotY: Math.PI, // faces road (door toward negative Z)
   },
   {
-    name: 'Dům 1',
+    name: 'Maryin dům',
     width: 10, depth: 10, height: 3.5,
     wallColor: 0xa0825a, roofColor: 0x7a6242,
     x: -10, z: 24, rotY: Math.PI,
-  },
-  {
-    name: 'Dům 2',
-    width: 10, depth: 10, height: 3.5,
-    wallColor: 0xb89070, roofColor: 0x8a6a50,
-    x: -17, z: 24, rotY: Math.PI,
   },
   // --- Middle row (z ~ +12) ---
   {
     name: 'Obchod',
     width: 6, depth: 5.5, height: 4,
     wallColor: 0xc4a67a, roofColor: 0x8b7355,
-    x: 10, z: 12, rotY: Math.PI,
+    x: 10, z: 12, rotY: Math.PI + 90 * Math.PI / 180,
   },
   {
     name: 'Hotel',
@@ -110,6 +104,16 @@ export class Village {
     this.addStableCorral();
     this.addBuildingLabels();
     this.addCollapsedShack();
+    this.addCellarHatch();
+
+    // Haystack between the sheriff's office and the shop (Wazovský sits on top)
+    const haystack = this.createHaystack();
+    haystack.position.set(10, 0, 0);
+    this.group.add(haystack);
+    const hayBody = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC });
+    hayBody.addShape(new CANNON.Cylinder(1.25, 1.4, 1.3, 12));
+    hayBody.position.set(10, 0.65, 0);
+    physicsWorld.addBody(hayBody);
 
     // Well collider (cylinder at origin)
     const wellBody = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC });
@@ -161,12 +165,27 @@ export class Village {
         continue;
       }
 
-      // Move toward target
+      // Separation: push away from other horses
+      let sepX = 0, sepZ = 0;
+      const minSep = 1.5; // minimum distance between horses
+      for (const other of this.corralHorses) {
+        if (other === h) continue;
+        const ox = h.mesh.position.x - other.mesh.position.x;
+        const oz = h.mesh.position.z - other.mesh.position.z;
+        const oDist = Math.sqrt(ox * ox + oz * oz);
+        if (oDist < minSep && oDist > 0.01) {
+          const force = (minSep - oDist) / minSep;
+          sepX += (ox / oDist) * force;
+          sepZ += (oz / oDist) * force;
+        }
+      }
+
+      // Move toward target + separation
       const moveSpeed = h.speed * dt;
       const nx = dx / dist;
       const nz = dz / dist;
-      h.mesh.position.x += nx * moveSpeed;
-      h.mesh.position.z += nz * moveSpeed;
+      h.mesh.position.x += (nx + sepX * 2) * moveSpeed;
+      h.mesh.position.z += (nz + sepZ * 2) * moveSpeed;
 
       // Face movement direction (horse head points along +X, so offset by -PI/2)
       h.mesh.rotation.y = Math.atan2(nx, nz) - Math.PI / 2;
@@ -484,6 +503,81 @@ export class Village {
     return g;
   }
 
+  /** Open cellar hatch behind the church — the entrance to the underground lab */
+  private addCellarHatch(): void {
+    const g = new THREE.Group();
+    g.position.set(10, 0, -30); // behind the church
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1e, roughness: 0.9 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x080705 });
+
+    // Dark opening
+    const hole = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), darkMat);
+    hole.rotation.x = -Math.PI / 2;
+    hole.position.y = 0.03;
+    g.add(hole);
+
+    // Wooden border planks around the hole
+    const borders: [number, number, number, number][] = [
+      [0, 0.9, 2.0, 0.2], [0, -0.9, 2.0, 0.2],
+      [-0.9, 0, 0.2, 1.6], [0.9, 0, 0.2, 1.6],
+    ];
+    for (const [bx, bz, sx, sz] of borders) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.14, sz), woodMat);
+      plank.position.set(bx, 0.07, bz);
+      plank.castShadow = true;
+      g.add(plank);
+    }
+
+    // Open lid leaning to the side
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 1.8), woodMat);
+    lid.position.set(-1.15, 0.55, 0);
+    lid.rotation.z = -1.15;
+    lid.castShadow = true;
+    g.add(lid);
+
+    this.group.add(g);
+  }
+
+  /** Golden hay pile with a flat top and stray straw tufts */
+  private createHaystack(): THREE.Group {
+    const g = new THREE.Group();
+    const hayMat = new THREE.MeshStandardMaterial({ color: 0xd9b310, roughness: 1 });
+    const hayMat2 = new THREE.MeshStandardMaterial({ color: 0xc99a1a, roughness: 1 });
+    const strawMat = new THREE.MeshStandardMaterial({ color: 0xe8c547, roughness: 1 });
+
+    // Bottom tier
+    const bottom = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.4, 0.7, 12), hayMat);
+    bottom.position.y = 0.35;
+    bottom.castShadow = true;
+    bottom.receiveShadow = true;
+    g.add(bottom);
+
+    // Middle tier
+    const mid = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.3, 0.55, 12), hayMat2);
+    mid.position.y = 0.9;
+    mid.castShadow = true;
+    g.add(mid);
+
+    // Flat top to stand on
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.05, 0.25, 12), hayMat);
+    top.position.y = 1.28;
+    top.castShadow = true;
+    g.add(top);
+
+    // Stray straw tufts sticking out around the sides
+    for (let i = 0; i < 12; i++) {
+      const straw = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 4), strawMat);
+      const ang = (i / 12) * Math.PI * 2;
+      const r = 1.1 + Math.random() * 0.25;
+      straw.position.set(Math.cos(ang) * r, 0.45 + Math.random() * 0.7, Math.sin(ang) * r);
+      straw.rotation.z = (Math.random() - 0.5) * 1.3;
+      straw.rotation.x = (Math.random() - 0.5) * 1.3;
+      g.add(straw);
+    }
+
+    return g;
+  }
+
   private createHitchingPost(mat: THREE.MeshStandardMaterial): THREE.Group {
     const g = new THREE.Group();
     // Two vertical posts
@@ -623,6 +717,11 @@ export class Village {
   }
 
   /** Simple 3D horse model */
+  /** Build a standalone rideable horse (used for bought stable horses) */
+  createRideableHorse(color: number): THREE.Group {
+    return this.createHorse(color);
+  }
+
   private createHorse(color: number): THREE.Group {
     const horse = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });

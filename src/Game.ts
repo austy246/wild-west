@@ -12,6 +12,7 @@ import { CombatSystem } from './systems/CombatSystem';
 import { InteractionSystem } from './systems/InteractionSystem';
 import { Village } from './world/Village';
 import { InteriorManager } from './world/InteriorManager';
+import { UndergroundLab, BEHIND_CHURCH } from './world/UndergroundLab';
 import { DialogBox } from './ui/DialogBox';
 import { QuestLog } from './ui/QuestLog';
 import { QuestManager } from './quest/QuestManager';
@@ -25,6 +26,8 @@ import { Hotbar } from './ui/Hotbar';
 import { SaveManager, SaveData } from './core/SaveManager';
 import { createTerrain } from './world/Terrain';
 import { createLighting } from './world/Lighting';
+import { DayNight } from './world/DayNight';
+import { MaryCutscene } from './story/MaryCutscene';
 import { createSkybox } from './world/Skybox';
 import { NPC_DEFS } from './world/NPCSpawns';
 import { PHYSICS_TIMESTEP } from './utils/constants';
@@ -36,6 +39,9 @@ export class Game {
   private cameraSystem: CameraSystem;
   private village: Village;
   private interiorManager: InteriorManager;
+  private undergroundLab!: UndergroundLab;
+  private dayNight: DayNight;
+  private maryCutscene!: MaryCutscene;
   private npcs: NPC[] = [];
   private collectibles: Collectible[] = [];
   private bandits: Bandit[] = [];
@@ -49,15 +55,36 @@ export class Game {
   private shopUI: ShopUI;
   private pauseMenu: PauseMenu;
   private gameOverScreen: GameOverScreen;
+  private hotbar!: Hotbar;
 
   private terrain!: THREE.Mesh;
   private physicsAccumulator = 0;
+
+  // Chat
+  private chatInput!: HTMLInputElement;
+  private chatOpen = false;
+  private chatHistory: string[] = [];
+  private chatHistoryIndex = -1;
   private autoSaveTimer = 0;
   private shackPromptEl: HTMLElement;
   private eKeyWasDown = false;
   private eKeyWasDownUnicorn = false;
   private ridingUnicorn = false;
   private unicornPromptEl!: HTMLElement;
+
+  // Magic herb ("kouzelná travička") trip effect
+  private trippy = false;
+  private tripTimer = 0;
+  private tripOverlayEl!: HTMLElement;
+
+  // Mary story: night falls once the player steps back outside with the pendant
+  private nightPending = false;
+
+  // Bought stable horse (rideable)
+  private boughtHorseMesh: THREE.Group | null = null;
+  private boughtHorseSpeed = 2.0;
+  private ridingHorse = false;
+  private eKeyWasDownHorse = false;
 
   constructor(canvas: HTMLCanvasElement) {
     // Core
@@ -83,6 +110,13 @@ export class Game {
       const npc = new NPC(def);
       this.npcs.push(npc);
       this.engine.scene.add(npc.mesh);
+    }
+
+    // Lay Wazovský lounging on top of his haystack
+    const wazovsky = this.npcs.find((n) => n.def.id === 'wazovsky');
+    if (wazovsky) {
+      wazovsky.mesh.position.y = 1.5;
+      wazovsky.mesh.rotation.x = -Math.PI / 2; // lying on his back on the hay
     }
 
     // Collectibles
@@ -133,13 +167,40 @@ export class Game {
     // Interior Manager (after camera so we can pass cameraSystem)
     this.interiorManager = new InteriorManager(
       this.village,
-      this.player.body,
-      this.player.mesh,
+      this.player,
       this.engine.scene,
       this.physics.world,
       this.cameraSystem,
-      this.terrain
+      this.terrain,
+      this.wallet
     );
+
+    // Underground lab (Wazovský story)
+    this.undergroundLab = new UndergroundLab(
+      this.engine.scene,
+      this.player,
+      this.physics.world,
+      this.cameraSystem
+    );
+
+    // Day/night — night is switched on after Mary hands over the pendant
+    this.dayNight = new DayNight(this.engine.scene);
+
+    // Mary's escort cutscene
+    const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');
+    if (mary) {
+      this.maryCutscene = new MaryCutscene(
+        this.player,
+        mary,
+        this.village,
+        this.interiorManager,
+        this.dialogBox
+      );
+      this.maryCutscene.onPendantGiven = () => {
+        this.questManager.completeDelivery('townsfolk2');
+        this.nightPending = true;
+      };
+    }
 
     // Input
     InputManager.init(canvas);
@@ -157,6 +218,79 @@ export class Game {
       this.saveGame();
       window.location.reload();
     };
+
+    // Chat input
+    this.chatInput = document.createElement('input');
+    this.chatInput.type = 'text';
+    this.chatInput.placeholder = 'Napiš příkaz...';
+    this.chatInput.style.cssText = `
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 400px;
+      padding: 8px 14px;
+      background: rgba(0,0,0,0.8);
+      color: #DEB887;
+      border: 2px solid #8B4513;
+      border-radius: 6px;
+      font-size: 16px;
+      z-index: 50;
+      display: none;
+      outline: none;
+    `;
+    document.body.appendChild(this.chatInput);
+
+    // T to open chat
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyT' && !this.chatOpen) {
+        e.preventDefault();
+        this.chatOpen = true;
+        this.chatInput.style.display = 'block';
+        this.chatInput.value = '';
+        this.chatInput.focus();
+      }
+    });
+
+    // Enter to send, Escape to close, ArrowUp for history
+    this.chatInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.code === 'Enter') {
+        const text = this.chatInput.value.trim();
+        if (text) this.chatHistory.push(text);
+        this.chatHistoryIndex = -1;
+        this.processChat(text);
+        this.chatOpen = false;
+        this.chatInput.style.display = 'none';
+        this.chatInput.value = '';
+      } else if (e.code === 'Escape') {
+        this.chatOpen = false;
+        this.chatInput.style.display = 'none';
+        this.chatInput.value = '';
+        this.chatHistoryIndex = -1;
+      } else if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (this.chatHistory.length > 0) {
+          if (this.chatHistoryIndex === -1) {
+            this.chatHistoryIndex = this.chatHistory.length - 1;
+          } else if (this.chatHistoryIndex > 0) {
+            this.chatHistoryIndex--;
+          }
+          this.chatInput.value = this.chatHistory[this.chatHistoryIndex];
+        }
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        if (this.chatHistoryIndex !== -1) {
+          if (this.chatHistoryIndex < this.chatHistory.length - 1) {
+            this.chatHistoryIndex++;
+            this.chatInput.value = this.chatHistory[this.chatHistoryIndex];
+          } else {
+            this.chatHistoryIndex = -1;
+            this.chatInput.value = '';
+          }
+        }
+      }
+    });
 
     // Game Over screen
     this.gameOverScreen = new GameOverScreen();
@@ -198,13 +332,61 @@ export class Game {
     EventBus.on('shop:purchased', (data: { item: { weaponType?: string } }) => {
       if (data.item.weaponType) {
         this.combatSystem.unlockWeapon(data.item.weaponType as any);
-        this.showNotification(`Odemčena zbraň!`);
+        this.combatSystem.switchWeapon(data.item.weaponType as any);
+        this.showNotification(`Odemčena zbraň: ${data.item.weaponType === 'shotgun' ? 'Brokovnice' : data.item.weaponType}!`);
       }
     });
 
-    // Quest completion notification
-    EventBus.on('quest:completed', (data: { name: string; reward: { lilky: number } }) => {
+    // Quest completion notification (+ Wazovský story chaining)
+    EventBus.on('quest:completed', (data: { questId: string; name: string; reward: { lilky: number } }) => {
+      if (data.questId === 'wazovsky-supplies') {
+        // Gathered the plants → next: bring them to Wazovský
+        this.questManager.accept('wazovsky-delivery');
+        this.showNotification('Máš dost rostlinek! Dones je Wazovskému.');
+        return;
+      }
+      if (data.questId === 'wazovsky-delivery') {
+        // Handed the plants over — they leave the inventory
+        this.hotbar.removeAllOf('magic-plant');
+        this.questManager.accept('mary-pendant');
+        this.showNotification(`Wazovský ti dal ${data.reward.lilky} lilků!`);
+        return;
+      }
+      if (data.questId === 'mary-pendant') {
+        return; // the cutscene shows its own messages
+      }
       this.showNotification(`Quest dokončen: ${data.name} (+${data.reward.lilky} lilků)`);
+    });
+
+    // Night falls the moment the player steps out of Mary's house
+    EventBus.on('player:exit-building', () => {
+      if (!this.nightPending) return;
+      this.nightPending = false;
+      this.dayNight.setNight();
+      // Send Mary back out to her usual spot instead of leaving her in the room
+      const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');
+      if (mary) mary.mesh.position.set(mary.def.x, 0, mary.def.z);
+      this.showNotification('Setmělo se... drž se u světla.');
+    });
+
+    // Generic notification requests (e.g. from the stable)
+    EventBus.on('notify', (data: { text: string }) => {
+      this.showNotification(data.text);
+    });
+
+    // Bought a stable horse → spawn a rideable horse outside the stable
+    EventBus.on('horse:bought', (data: { name: string; color: number; rideSpeed: number; x: number; z: number }) => {
+      if (this.boughtHorseMesh) {
+        this.engine.scene.remove(this.boughtHorseMesh);
+      }
+      const mount = this.village.createRideableHorse(data.color);
+      mount.position.set(data.x + 1.5, 0, data.z);
+      this.engine.scene.add(mount);
+      this.boughtHorseMesh = mount;
+      this.boughtHorseSpeed = data.rideSpeed;
+      this.ridingHorse = false;
+      this.eKeyWasDownHorse = true; // require a fresh E press to mount
+      this.showNotification(`Koupil jsi koně ${data.name}! Čeká venku před stájí.`);
     });
 
     // Auto-save on window close
@@ -214,7 +396,7 @@ export class Game {
     document.getElementById('hud')?.classList.remove('hidden');
 
     // Hotbar
-    new Hotbar(() => this.combatSystem.playerHp >= this.combatSystem.playerMaxHp);
+    this.hotbar = new Hotbar(() => this.combatSystem.playerHp >= this.combatSystem.playerMaxHp);
 
     // Shack interaction prompt
     this.shackPromptEl = document.createElement('div');
@@ -256,6 +438,12 @@ export class Game {
       pointer-events: none;
     `;
     document.body.appendChild(this.unicornPromptEl);
+
+    // Rainbow overlay for the magic-herb trip (blends over the 3D canvas)
+    this.tripOverlayEl = document.createElement('div');
+    this.tripOverlayEl.id = 'trip-overlay';
+    this.tripOverlayEl.style.display = 'none';
+    document.body.appendChild(this.tripOverlayEl);
   }
 
   /** Main game loop tick */
@@ -271,11 +459,34 @@ export class Game {
     // Input
     InputManager.poll();
 
+    // Cutscene: the script drives everything, normal gameplay is suspended
+    if (this.maryCutscene?.active) {
+      this.maryCutscene.update(dt);
+      this.player.update(dt);
+      for (const npc of this.npcs) npc.update(dt);
+      this.dayNight.update(this.player.mesh.position);
+      this.cameraSystem.offset.lerp(this.interiorManager.getCameraOffset(), 0.05);
+      this.cameraSystem.update(dt);
+      this.engine.render();
+      return;
+    }
+
     // Auto-save every 60 seconds
     this.autoSaveTimer += dt;
     if (this.autoSaveTimer >= 60) {
       this.autoSaveTimer = 0;
       this.saveGame();
+    }
+
+    // Magic herb trip — count down and end the rainbow effect
+    if (this.trippy) {
+      this.tripTimer -= dt;
+      if (this.tripTimer <= 0) {
+        this.trippy = false;
+        document.getElementById('game-canvas')?.classList.remove('trippy');
+        this.tripOverlayEl.style.display = 'none';
+        this.showNotification('Trip skončil...');
+      }
     }
 
     // Physics (fixed timestep)
@@ -306,6 +517,42 @@ export class Game {
 
     // Combat
     this.combatSystem.update(dt);
+
+    // Update holdingFood flag & auto-switch weapon based on hotbar
+    this.player.holdingFood = this.hotbar.isSelectedFood();
+    const selectedItem = this.hotbar.getSelectedItem();
+    if (selectedItem === 'shotgun') {
+      if (this.combatSystem.currentWeapon !== 'shotgun') this.combatSystem.switchWeapon('shotgun');
+    } else if (selectedItem === 'knife') {
+      if (this.combatSystem.currentWeapon !== 'knife') this.combatSystem.switchWeapon('knife');
+    } else if (this.combatSystem.currentWeapon === 'shotgun' || this.combatSystem.currentWeapon === 'knife') {
+      this.combatSystem.switchWeapon('fists');
+    }
+
+    // Eat food or use ammo (left or right click with item selected)
+    if (InputManager.leftClick || InputManager.rightClick) {
+      const selectedItem = this.hotbar.getSelectedItem();
+      if (selectedItem === 'ammo') {
+        this.hotbar.consumeSelected();
+        this.combatSystem.addAmmo(1);
+        this.showNotification('Nabito! +1 náboj');
+      } else {
+        const result = this.hotbar.consumeSelected();
+        if (result) {
+          this.player.hunger = Math.min(this.player.hunger + result.hunger, this.player.maxHunger);
+          this.showNotification(`Snědl jsi ${result.name}!`);
+        }
+      }
+    }
+
+    // Hunger drain: 1 per 20 seconds = 0.05/s
+    this.player.hunger = Math.max(0, this.player.hunger - 0.05 * dt);
+
+    // Update hunger bar
+    const hungerFill = document.getElementById('hunger-bar-fill');
+    const hungerText = document.getElementById('hunger-text');
+    if (hungerFill) hungerFill.style.width = `${(this.player.hunger / this.player.maxHunger) * 100}%`;
+    if (hungerText) hungerText.textContent = `${Math.round(this.player.hunger)} / ${this.player.maxHunger}`;
 
     // Interaction (right-click on NPCs)
     this.interactionSystem.update();
@@ -377,8 +624,67 @@ export class Game {
       this.eKeyWasDownUnicorn = eDown;
     }
 
-    // Interior manager (door interactions)
-    this.interiorManager.update();
+    // Bought stable horse mount/dismount (speed depends on the horse)
+    if (this.boughtHorseMesh && !this.interiorManager.isInside) {
+      const horseMesh = this.boughtHorseMesh;
+      const dx = horseMesh.position.x - playerPos.x;
+      const dz = horseMesh.position.z - playerPos.z;
+      const nearHorse = Math.sqrt(dx * dx + dz * dz) < 2.5;
+
+      if (this.ridingHorse) {
+        this.player.mesh.position.y += 1.15;
+        horseMesh.position.set(this.player.mesh.position.x, 0, this.player.mesh.position.z);
+        horseMesh.rotation.y = this.player.mesh.rotation.y - Math.PI / 2;
+        this.unicornPromptEl.textContent = 'Stiskni E pro sesednutí z koně';
+        this.unicornPromptEl.style.display = 'block';
+      } else if (nearHorse) {
+        this.unicornPromptEl.textContent = 'Stiskni E pro nasednutí na koně';
+        this.unicornPromptEl.style.display = 'block';
+      }
+
+      const eDown = InputManager.isKeyDown('KeyE');
+      if (eDown && !this.eKeyWasDownHorse && (this.ridingHorse || nearHorse)) {
+        if (this.ridingHorse) {
+          this.ridingHorse = false;
+          this.player.speedMultiplier = 1;
+          this.player.body.linearDamping = 0.4;
+          horseMesh.position.set(this.player.mesh.position.x + 2, 0, this.player.mesh.position.z);
+          this.showNotification('Sesedl jsi z koně');
+        } else {
+          this.ridingHorse = true;
+          this.player.speedMultiplier = this.boughtHorseSpeed;
+          this.player.body.linearDamping = 0;
+          this.showNotification('Nasedl jsi na koně!');
+        }
+      }
+      this.eKeyWasDownHorse = eDown;
+    }
+
+    // Behind-church trap → fall into the underground lab
+    if (
+      this.questManager.isActive('wazovsky-supplies') &&
+      !this.undergroundLab.busy &&
+      !this.interiorManager.isInside
+    ) {
+      const bdx = playerPos.x - BEHIND_CHURCH.x;
+      const bdz = playerPos.z - BEHIND_CHURCH.z;
+      if (Math.sqrt(bdx * bdx + bdz * bdz) < 2.5) {
+        // Dismount any horse/unicorn before falling in
+        this.ridingHorse = false;
+        this.ridingUnicorn = false;
+        this.combatSystem.ridingUnicorn = false;
+        this.player.speedMultiplier = 1;
+        this.player.body.linearDamping = 0.4;
+        void this.undergroundLab.enter();
+      }
+    }
+    this.undergroundLab.update(dt);
+
+    // Interior manager (door interactions + stable horses)
+    this.interiorManager.update(dt);
+
+    // Night lantern follows the player
+    this.dayNight.update(this.player.mesh.position);
 
     // Camera — adapt offset for interiors
     const offset = this.interiorManager.getCameraOffset();
@@ -391,18 +697,82 @@ export class Game {
 
   /** Handle NPC interaction — show quest dialog or regular dialog */
   private handleNPCInteraction(npc: NPC): void {
-    // Check if this NPC can receive a delivery
+    // Mary's story beat — must come before the generic delivery hand-in
+    if (npc.def.id === 'townsfolk2' && this.questManager.isActive('mary-pendant')) {
+      this.dialogBox.show(
+        npc,
+        'Konečně jsi tady. Tohle ti ale nemůžu říct na ulici — pojď ke mně domů.',
+        [
+          {
+            label: 'Jít s Mary',
+            action: () => {
+              this.dialogBox.close();
+              this.maryCutscene?.start();
+            },
+          },
+          { label: 'Teď ne', action: () => this.dialogBox.close() },
+        ]
+      );
+      return;
+    }
+
+    // Check if this NPC can receive a delivery (priority — e.g. Wazovský's plants)
     const deliveryQuest = this.questManager.getDeliveryReady(npc.def.id);
     if (deliveryQuest) {
-      this.dialogBox.show(npc, `Díky za doručení! Tady máš odměnu.`, [
-        {
-          label: 'Odevzdat',
-          action: () => {
-            this.questManager.completeDelivery(npc.def.id);
-            this.dialogBox.close();
+      const isWazovskyPlants = deliveryQuest.def.id === 'wazovsky-delivery';
+      this.dialogBox.show(
+        npc,
+        isWazovskyPlants
+          ? 'Ty jo, ty jsou nádherný! Tady máš, zasloužíš si to.'
+          : 'Díky za doručení! Tady máš odměnu.',
+        [
+          {
+            label: 'Odevzdat',
+            action: () => {
+              this.questManager.completeDelivery(npc.def.id);
+              if (isWazovskyPlants) {
+                // Wazovský points him at Mary before letting him go
+                this.dialogBox.show(
+                  npc,
+                  'Hej... a zajdi ještě za Mary. Má něco dost podivnýho.',
+                  [{ label: 'Dobře', action: () => this.dialogBox.close() }]
+                );
+              } else {
+                this.dialogBox.close();
+              }
+            },
           },
-        },
-      ]);
+        ]
+      );
+      return;
+    }
+
+    // Wazovský — sells the "kouzelná travička" (and kicks off his supply quest)
+    if (npc.def.id === 'wazovsky') {
+      if (this.trippy) {
+        this.dialogBox.showSimple(npc, 'Klídek, kámo... teď si to užívej. Vrať se, až tě to pustí.');
+        return;
+      }
+      const price = 500;
+      this.dialogBox.show(
+        npc,
+        `Psst... mám kouzelnou travičku. Ale kvalita něco stojí — ${price} lilků. Jdeš do toho?`,
+        [
+          {
+            label: `Koupit (${price} lilků)`,
+            action: () => {
+              this.dialogBox.close();
+              if (this.wallet.spend(price)) {
+                this.startTrip(20);
+                this.startWazovskyQuest();
+              } else {
+                this.showNotification('Nemáš dost lilků!');
+              }
+            },
+          },
+          { label: 'Ne, díky', action: () => this.dialogBox.close() },
+        ]
+      );
       return;
     }
 
@@ -441,6 +811,37 @@ export class Game {
     this.dialogBox.showSimple(npc, npc.def.dialog);
   }
 
+  /** Start the magic-herb trip: refill everything and go rainbow for `seconds`. */
+  private startTrip(seconds: number): void {
+    // Refill all bars to 100%
+    this.combatSystem.healFull();
+    this.player.stamina = this.player.maxStamina;
+    this.player.hunger = this.player.maxHunger;
+
+    this.showNotification('🌈 Kouzelná travička! 🌈');
+
+    // Rainbow visuals: hue-cycle the whole scene + rainbow overlay
+    this.trippy = true;
+    this.tripTimer = seconds;
+    document.getElementById('game-canvas')?.classList.add('trippy');
+    this.tripOverlayEl.style.display = 'block';
+  }
+
+  /** After buying the herb: clear other quests and start Wazovský's supply quest. */
+  private startWazovskyQuest(): void {
+    if (
+      this.questManager.isActive('wazovsky-supplies') ||
+      this.questManager.isCompleted('wazovsky-supplies')
+    ) {
+      return;
+    }
+    this.questManager.clearActive(); // "ostatní se vynulují"
+    this.questManager.accept('wazovsky-supplies');
+    setTimeout(() => {
+      this.showNotification('Wazovský: Kámo, došly mi zásoby! Zajdi za kostel.');
+    }, 1600);
+  }
+
   /** Save current game state */
   saveGame(): void {
     const data: SaveData = {
@@ -459,6 +860,10 @@ export class Game {
       unlockedWeapons: [...this.combatSystem.unlockedWeapons],
       currentWeapon: this.combatSystem.currentWeapon,
       collectedItems: this.collectibles.filter((c) => c.collected).map((c) => c.def.id),
+      story: {
+        pendant: this.player.hasPendant,
+        night: this.dayNight.isNight,
+      },
     };
     SaveManager.save(data);
   }
@@ -484,9 +889,31 @@ export class Game {
         c.mesh.visible = false;
       }
     }
+
+    // Mary story state
+    if (data.story?.pendant) this.player.showPendant();
+    if (data.story?.night) {
+      this.dayNight.setNight();
+    } else {
+      this.dayNight.setDay();
+    }
+    // Saved inside Mary's house right after the pendant? Night still owes us.
+    this.nightPending = !!data.story?.pendant && !data.story?.night;
   }
 
   /** Show a temporary notification on screen */
+  private processChat(text: string): void {
+    if (!text) return;
+    const match = text.match(/^\/money\s+(\d+)$/);
+    if (match) {
+      const amount = parseInt(match[1], 10);
+      this.wallet.add(amount);
+      this.showNotification(`+${amount} lilků`);
+    } else {
+      this.showNotification('Neznámý příkaz');
+    }
+  }
+
   private showNotification(text: string): void {
     const el = document.createElement('div');
     el.style.cssText = `

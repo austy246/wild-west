@@ -1,7 +1,10 @@
 import { EventBus } from '../core/EventBus';
 
+/** What the player starts a new game with */
+const STARTING_LILKY = 150;
+
 export class Wallet {
-  private _lilky = 0;
+  private _lilky = STARTING_LILKY;
   private hudElement: HTMLElement | null;
 
   get lilky(): number {

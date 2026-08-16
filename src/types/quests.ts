@@ -2,8 +2,8 @@ export type QuestType = 'delivery' | 'collection' | 'combat';
 export type QuestStatus = 'available' | 'active' | 'completed';
 
 export interface QuestObjective {
-  type: 'deliver' | 'collect' | 'kill';
-  /** Target identifier: NPC id, item id, or enemy type */
+  type: 'deliver' | 'collect' | 'kill' | 'reach';
+  /** Target identifier: NPC id, item id, enemy type, or location id */
   target: string;
   /** Human-readable description */
   description: string;

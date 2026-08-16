@@ -12,15 +12,6 @@ export const NPC_DEFS: NPCDef[] = [
     dialog: 'Howdy, příteli! Tady ve městě to není bezpečné. Banditi se potulují za městem.',
   },
   {
-    id: 'shopkeeper',
-    name: 'Obchodník Pete',
-    color: 0x558b2f,  // green apron
-    hatColor: 0x8d6e63,
-    x: 9, z: 10,
-    patrolRadius: 2,
-    dialog: 'Vítej v mém obchodě! Mám nejlepší zboží v celém kraji.',
-  },
-  {
     id: 'bartender',
     name: 'Barman Joe',
     color: 0xf5f5f5,  // white shirt
@@ -56,6 +47,15 @@ export const NPC_DEFS: NPCDef[] = [
     patrolRadius: 6,
     dialog: 'Slyšela jsem, že u staré studny se něco leskne. Možná zlato?',
     gender: 'female',
+  },
+  {
+    id: 'wazovsky',
+    name: 'Pan Wazovský',
+    color: 0x6a1b9a,   // purple robe
+    hatColor: 0x4a148c,
+    x: 10, z: 0,       // on the haystack between the sheriff's office and the shop
+    patrolRadius: 0,   // stationary — sits on his haystack
+    dialog: 'Psst... nechceš kouzelnou travičku?',
   },
   {
     id: 'townsfolk3',

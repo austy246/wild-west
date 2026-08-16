@@ -1,8 +1,13 @@
 import { Game } from './Game';
 import { MainMenu } from './ui/MainMenu';
 import { SaveManager } from './core/SaveManager';
+import { GAME_VERSION } from './version';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+
+// Stamp the build version into the corner
+const versionEl = document.getElementById('version-tag');
+if (versionEl) versionEl.textContent = `v${GAME_VERSION}`;
 
 let game: Game | null = null;
 

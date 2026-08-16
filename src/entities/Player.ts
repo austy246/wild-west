@@ -314,6 +314,7 @@ export class Player {
 
     // Faint green glow so it reads at night
     const glow = new THREE.PointLight(0x4dff9a, 1.2, 1.6, 2);
+    glow.userData.alwaysOn = true; // it's on the player — always in range anyway
     glow.position.set(0, 1.06, 0.26);
     group.add(glow);
 

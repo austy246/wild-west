@@ -271,11 +271,13 @@ export class UndergroundLab {
 
     this.followLight = new THREE.PointLight(0xffd9a0, 60, 11, 1.1);
     this.followLight.position.set(this.origin.x, 2.2, this.origin.z + 6); // at the spawn spot
+    this.followLight.userData.alwaysOn = true; // the lab is pitch black without it
     this.scene.add(this.followLight);
     this.labLights.push(this.followLight);
 
     const cauldronGlow = new THREE.PointLight(0x9CFF40, 18, 10, 1.2);
     cauldronGlow.position.set(this.origin.x, 1.3, this.origin.z - half + 3.5);
+    cauldronGlow.userData.alwaysOn = true;
     this.scene.add(cauldronGlow);
     this.labLights.push(cauldronGlow);
 

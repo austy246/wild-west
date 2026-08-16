@@ -676,6 +676,7 @@ export class Village {
       const [hx, , hz] = horsePositions[i];
       horse.position.set(hx, 0, hz);
       horse.rotation.y = horseRotations[i];
+      horse.userData.dynamic = true; // wanders every frame — never merge it away
       corralGroup.add(horse);
 
       this.corralHorses.push({

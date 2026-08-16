@@ -25,9 +25,13 @@ import { TouchControls } from './ui/TouchControls';
 import { Hotbar } from './ui/Hotbar';
 import { SaveManager, SaveData } from './core/SaveManager';
 import { createTerrain } from './world/Terrain';
-import { createLighting } from './world/Lighting';
+import { createLighting, followSun, SceneLights } from './world/Lighting';
 import { DayNight } from './world/DayNight';
 import { MaryCutscene } from './story/MaryCutscene';
+import { LightBudget } from './systems/LightBudget';
+import { QualityManager } from './systems/QualityManager';
+import { pruneSmallShadowCasters } from './systems/ShadowPruner';
+import { dedupeMaterials, mergeStaticDescendants } from './systems/StaticBatcher';
 import { createSkybox } from './world/Skybox';
 import { NPC_DEFS } from './world/NPCSpawns';
 import { PHYSICS_TIMESTEP } from './utils/constants';
@@ -42,6 +46,9 @@ export class Game {
   private undergroundLab!: UndergroundLab;
   private dayNight: DayNight;
   private maryCutscene!: MaryCutscene;
+  private sceneLights: SceneLights;
+  private lightBudget!: LightBudget;
+  private qualityManager!: QualityManager;
   private npcs: NPC[] = [];
   private collectibles: Collectible[] = [];
   private bandits: Bandit[] = [];
@@ -93,7 +100,7 @@ export class Game {
 
     // World
     createSkybox(this.engine.scene);
-    createLighting(this.engine.scene);
+    this.sceneLights = createLighting(this.engine.scene);
     this.terrain = createTerrain();
     this.engine.scene.add(this.terrain);
 
@@ -201,6 +208,38 @@ export class Game {
         this.nightPending = true;
       };
     }
+
+    // --- Performance ---
+    // Characters keep their shadows however small their individual parts are
+    for (const g of [this.player.mesh, ...this.npcs.map((n) => n.mesh), ...this.bandits.map((b) => b.mesh)]) {
+      g.traverse((o) => { o.userData.keepShadow = true; });
+    }
+    pruneSmallShadowCasters(this.engine.scene);
+
+    // Collapse the town's static clutter into a few big meshes. Buildings are
+    // batched individually so each one can still be hidden when you step
+    // inside it; interiors are skipped entirely (they're stashed underground
+    // and get moved and scaled when entered).
+    dedupeMaterials(this.engine.scene);
+    const buildingGroups = new Set<THREE.Object3D>();
+    for (const b of this.village.buildings) {
+      buildingGroups.add(b.exteriorGroup);
+      buildingGroups.add(b.interiorGroup);
+    }
+    mergeStaticDescendants(this.village.group, { skip: buildingGroups });
+    for (const b of this.village.buildings) {
+      mergeStaticDescendants(b.exteriorGroup);
+    }
+
+    this.lightBudget = new LightBudget(this.engine.scene);
+    this.qualityManager = new QualityManager(
+      this.engine.renderer,
+      this.sceneLights.sun,
+      this.lightBudget
+    );
+    this.qualityManager.onTierChange = (tier, reason) => {
+      if (tier === 1) this.showNotification(`Snižuji detaily kvůli plynulosti (${reason})`);
+    };
 
     // Input
     InputManager.init(canvas);
@@ -465,6 +504,8 @@ export class Game {
       this.player.update(dt);
       for (const npc of this.npcs) npc.update(dt);
       this.dayNight.update(this.player.mesh.position);
+      followSun(this.sceneLights.sun, this.player.mesh.position);
+      this.lightBudget.update(dt, this.player.mesh.position);
       this.cameraSystem.offset.lerp(this.interiorManager.getCameraOffset(), 0.05);
       this.cameraSystem.update(dt);
       this.engine.render();
@@ -685,6 +726,12 @@ export class Game {
 
     // Night lantern follows the player
     this.dayNight.update(this.player.mesh.position);
+
+    // Performance: keep the shadow box and the lit lamps around the player,
+    // and turn detail down if the machine can't keep up
+    followSun(this.sceneLights.sun, this.player.mesh.position);
+    this.lightBudget.update(dt, this.player.mesh.position);
+    this.qualityManager.update(dt);
 
     // Camera — adapt offset for interiors
     const offset = this.interiorManager.getCameraOffset();

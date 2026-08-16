@@ -72,6 +72,7 @@ export class DayNight {
     // Lantern bubble that travels with the player
     this.followLight = new THREE.PointLight(0xffe3ac, 90, 22, 1.0);
     this.followLight.position.set(0, 2.6, 0);
+    this.followLight.userData.alwaysOn = true; // never culled by LightBudget
     this.scene.add(this.followLight);
   }
 

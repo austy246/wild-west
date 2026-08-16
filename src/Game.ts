@@ -27,6 +27,7 @@ import { SaveManager, SaveData } from './core/SaveManager';
 import { createTerrain } from './world/Terrain';
 import { createLighting, followSun, SceneLights } from './world/Lighting';
 import { DayNight } from './world/DayNight';
+import { Bedtime } from './world/Bedtime';
 import { MaryCutscene } from './story/MaryCutscene';
 import { LightBudget } from './systems/LightBudget';
 import { QualityManager } from './systems/QualityManager';
@@ -45,6 +46,7 @@ export class Game {
   private interiorManager: InteriorManager;
   private undergroundLab!: UndergroundLab;
   private dayNight: DayNight;
+  private bedtime: Bedtime;
   private maryCutscene!: MaryCutscene;
   private sceneLights: SceneLights;
   private lightBudget!: LightBudget;
@@ -192,6 +194,7 @@ export class Game {
 
     // Day/night — night is switched on after Mary hands over the pendant
     this.dayNight = new DayNight(this.engine.scene);
+    this.bedtime = new Bedtime(this.village);
 
     // Mary's escort cutscene
     const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');
@@ -399,13 +402,21 @@ export class Game {
 
     // Night falls the moment the player steps out of Mary's house
     EventBus.on('player:exit-building', () => {
+      this.bedtime.onExitBuilding();
+
       if (!this.nightPending) return;
       this.nightPending = false;
       this.dayNight.setNight();
-      // Send Mary back out to her usual spot instead of leaving her in the room
+      // Send Mary back out to her usual spot so she can walk home like everyone
       const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');
       if (mary) mary.mesh.position.set(mary.def.x, 0, mary.def.z);
-      this.showNotification('Setmělo se... drž se u světla.');
+      this.bedtime.start(this.npcs);
+      this.showNotification('Setmělo se... lidi jdou spát.');
+    });
+
+    // Whoever sleeps here becomes visible while the player is inside
+    EventBus.on('player:enter-building', (data: { name: string }) => {
+      this.bedtime.onEnterBuilding(data.name);
     });
 
     // Generic notification requests (e.g. from the stable)
@@ -503,7 +514,7 @@ export class Game {
       this.maryCutscene.update(dt);
       this.player.update(dt);
       for (const npc of this.npcs) npc.update(dt);
-      this.dayNight.update(this.player.mesh.position);
+      this.dayNight.update(this.player.mesh.position, this.interiorManager.isInside);
       followSun(this.sceneLights.sun, this.player.mesh.position);
       this.lightBudget.update(dt, this.player.mesh.position);
       this.cameraSystem.offset.lerp(this.interiorManager.getCameraOffset(), 0.05);
@@ -725,7 +736,7 @@ export class Game {
     this.interiorManager.update(dt);
 
     // Night lantern follows the player
-    this.dayNight.update(this.player.mesh.position);
+    this.dayNight.update(this.player.mesh.position, this.interiorManager.isInside);
 
     // Performance: keep the shadow box and the lit lamps around the player,
     // and turn detail down if the machine can't keep up
@@ -744,6 +755,12 @@ export class Game {
 
   /** Handle NPC interaction — show quest dialog or regular dialog */
   private handleNPCInteraction(npc: NPC): void {
+    // Woken up in the middle of the night — no quests, just grumbling
+    if (npc.isAsleep) {
+      this.dialogBox.showSimple(npc, this.bedtime.sleepyLine(npc));
+      return;
+    }
+
     // Mary's story beat — must come before the generic delivery hand-in
     if (npc.def.id === 'townsfolk2' && this.questManager.isActive('mary-pendant')) {
       this.dialogBox.show(
@@ -941,6 +958,7 @@ export class Game {
     if (data.story?.pendant) this.player.showPendant();
     if (data.story?.night) {
       this.dayNight.setNight();
+      this.bedtime.startInstantly(this.npcs); // the walk home already happened
     } else {
       this.dayNight.setDay();
     }

@@ -58,7 +58,10 @@ export interface NPCDef {
   gender?: 'male' | 'female';
 }
 
-type AIState = 'idle' | 'wander' | 'talk';
+type AIState = 'idle' | 'wander' | 'talk' | 'gohome' | 'asleep';
+
+/** How fast an NPC hurries home once night falls */
+const GOHOME_SPEED = 2.2;
 
 export class NPC {
   readonly def: NPCDef;
@@ -68,6 +71,16 @@ export class NPC {
   private stateTimer = 0;
   private wanderTarget = new THREE.Vector3();
   private homePosition: THREE.Vector3;
+
+  /** Route home at nightfall, and what to do once the door is reached */
+  private route: THREE.Vector3[] = [];
+  private routeIndex = 0;
+  private onArriveHome: (() => void) | null = null;
+
+  /** True once the NPC has gone indoors for the night */
+  get isAsleep(): boolean {
+    return this.state === 'asleep';
+  }
 
   /** Floating name label sprite */
   private label: THREE.Sprite;
@@ -155,8 +168,32 @@ export class NPC {
     return sprite;
   }
 
+  /**
+   * Send the NPC home for the night along a short route (last point is the
+   * door). `onArrive` fires once he reaches it — that's when he goes inside.
+   */
+  sendHome(route: THREE.Vector3[], onArrive: () => void): void {
+    if (route.length === 0) return;
+    this.route = route;
+    this.routeIndex = 0;
+    this.onArriveHome = onArrive;
+    this.state = 'gohome';
+  }
+
+  /** Mark as tucked in — stops all movement until the game is reloaded. */
+  fallAsleep(): void {
+    this.state = 'asleep';
+    this.route = [];
+    this.onArriveHome = null;
+  }
+
   update(dt: number): void {
-    if (this.state === 'talk') return; // frozen during dialog
+    if (this.state === 'talk' || this.state === 'asleep') return; // frozen
+
+    if (this.state === 'gohome') {
+      this.walkRoute(dt);
+      return;
+    }
 
     this.stateTimer -= dt;
 
@@ -205,11 +242,42 @@ export class NPC {
     }
   }
 
+  /**
+   * Head-down walk toward the door. Unlike wandering this ignores the
+   * road-snapping and the building check — he's walking off the road on
+   * purpose, straight at his own front door.
+   */
+  private walkRoute(dt: number): void {
+    const target = this.route[this.routeIndex];
+    if (!target) {
+      const arrived = this.onArriveHome;
+      this.onArriveHome = null;
+      arrived?.();
+      return;
+    }
+
+    const dx = target.x - this.mesh.position.x;
+    const dz = target.z - this.mesh.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < 0.35) {
+      this.routeIndex++;
+      return;
+    }
+
+    const step = Math.min(GOHOME_SPEED * dt, dist);
+    this.mesh.position.x += (dx / dist) * step;
+    this.mesh.position.z += (dz / dist) * step;
+    this.mesh.rotation.y = Math.atan2(dx, dz);
+    this.mesh.position.y = Math.abs(Math.sin(Date.now() * 0.01)) * 0.04;
+  }
+
   startTalk(): void {
-    this.state = 'talk';
+    if (this.state !== 'asleep') this.state = 'talk';
   }
 
   endTalk(): void {
+    if (this.state === 'asleep') return; // don't wake him up
     this.state = 'idle';
     this.stateTimer = randomRange(2, 4);
   }

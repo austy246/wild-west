@@ -53,6 +53,9 @@ export class InteractionSystem {
     let nearestDist = INTERACT_DISTANCE;
 
     for (const npc of this.npcs) {
+      // Sleepers parked inside buildings are hidden — don't offer them
+      // through the wall while the player is out on the street
+      if (!npc.mesh.visible) continue;
       const dx = npc.mesh.position.x - playerPos.x;
       const dz = npc.mesh.position.z - playerPos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);

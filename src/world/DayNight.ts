@@ -99,9 +99,15 @@ export class DayNight {
     }
   }
 
-  /** Keep the lantern centred on the player. */
-  update(playerPos: THREE.Vector3): void {
+  /**
+   * Keep the lantern centred on the player. Indoors it is turned right down —
+   * the same brightness that carves a bubble out of an open street blows out a
+   * small room, whose own lamps are doing the work anyway.
+   */
+  update(playerPos: THREE.Vector3, indoors = false): void {
     if (!this.followLight) return;
     this.followLight.position.set(playerPos.x, playerPos.y + 1.8, playerPos.z);
+    this.followLight.intensity = indoors ? 8 : 90;
+    this.followLight.distance = indoors ? 8 : 22;
   }
 }

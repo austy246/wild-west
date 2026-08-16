@@ -28,6 +28,9 @@ export class DayNight {
 
   private night = false;
 
+  /** Fired whenever the world flips between day and night */
+  onChange: ((night: boolean) => void) | null = null;
+
   get isNight(): boolean {
     return this.night;
   }
@@ -74,6 +77,8 @@ export class DayNight {
     this.followLight.position.set(0, 2.6, 0);
     this.followLight.userData.alwaysOn = true; // never culled by LightBudget
     this.scene.add(this.followLight);
+
+    this.onChange?.(true);
   }
 
   /** Back to daylight (used when a save without night is loaded). */
@@ -97,6 +102,8 @@ export class DayNight {
       this.followLight.dispose();
       this.followLight = null;
     }
+
+    this.onChange?.(false);
   }
 
   /**

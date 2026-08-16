@@ -31,6 +31,7 @@ import { Bedtime } from './world/Bedtime';
 import { MaryCutscene } from './story/MaryCutscene';
 import { WagonCutscene } from './story/WagonCutscene';
 import { FlyerOverlay } from './ui/FlyerOverlay';
+import { MusicDirector } from './core/Music';
 import { LightBudget } from './systems/LightBudget';
 import { QualityManager } from './systems/QualityManager';
 import { pruneSmallShadowCasters } from './systems/ShadowPruner';
@@ -52,6 +53,7 @@ export class Game {
   private maryCutscene!: MaryCutscene;
   private wagonCutscene: WagonCutscene;
   private flyerOverlay: FlyerOverlay;
+  private music: MusicDirector;
   private sceneLights: SceneLights;
   private lightBudget!: LightBudget;
   private qualityManager!: QualityManager;
@@ -208,6 +210,19 @@ export class Game {
       this.questManager.accept('werewolf-flyer');
     };
     this.flyerOverlay = new FlyerOverlay();
+
+    // Score — starts here because the menu click counts as the user gesture
+    // browsers require before any audio may play
+    this.music = new MusicDirector();
+    this.music.start();
+    this.dayNight.onChange = (night) => this.music.setMood(night ? 'night' : 'day');
+
+    // M mutes and unmutes
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyM' || this.chatOpen) return;
+      const on = this.music.toggle();
+      this.showNotification(on ? '🔊 Hudba zapnutá' : '🔇 Hudba vypnutá');
+    });
 
     // Mary's escort cutscene
     const mary = this.npcs.find((n) => n.def.id === 'townsfolk2');

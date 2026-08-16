@@ -4,6 +4,7 @@ export class MainMenu {
   private overlay: HTMLElement;
   onNewGame: (() => void) | null = null;
   onContinue: (() => void) | null = null;
+  onMultiplayer: (() => void) | null = null;
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -53,6 +54,12 @@ export class MainMenu {
           border-radius:6px; cursor:pointer; letter-spacing:1px;
           transition: background 0.2s;
         ">Nová hra</button>
+        <button id="btn-multiplayer" style="
+          padding:14px; font-size:18px; font-weight:bold;
+          background:#4a5d37; color:#DEB887; border:2px solid #6b8b45;
+          border-radius:6px; cursor:pointer; letter-spacing:1px;
+          transition: background 0.2s;
+        ">Multiplayer</button>
       </div>
       <div style="
         position:absolute; bottom:24px;
@@ -71,6 +78,11 @@ export class MainMenu {
     this.overlay.querySelector('#btn-continue')?.addEventListener('click', () => {
       this.hide();
       this.onContinue?.();
+    });
+
+    this.overlay.querySelector('#btn-multiplayer')?.addEventListener('click', () => {
+      this.hide();
+      this.onMultiplayer?.();
     });
   }
 

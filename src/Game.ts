@@ -33,6 +33,8 @@ import { WagonCutscene } from './story/WagonCutscene';
 import { FlyerOverlay } from './ui/FlyerOverlay';
 import { MusicDirector } from './core/Music';
 import { TitleCard } from './ui/TitleCard';
+import { Net } from './net/Net';
+import { RemotePlayers } from './net/RemotePlayers';
 import { BurnedTown } from './story/BurnedTown';
 import { NorthRide } from './story/NorthRide';
 import { LightBudget } from './systems/LightBudget';
@@ -63,6 +65,9 @@ export class Game {
   private hidePromptEl!: HTMLElement;
   private eKeyWasDownHide = false;
   private hidingInProgress = false;
+  private net: Net | null;
+  private remotePlayers: RemotePlayers | null = null;
+  private netSendTimer = 0;
   private sceneLights: SceneLights;
   private lightBudget!: LightBudget;
   private qualityManager!: QualityManager;
@@ -114,7 +119,9 @@ export class Game {
   private ridingHorse = false;
   private eKeyWasDownHorse = false;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, net?: Net) {
+    this.net = net ?? null;
+
     // Core
     this.engine = new Engine(canvas);
     this.physics = new PhysicsWorld();
@@ -232,6 +239,13 @@ export class Game {
       EventBus.emit('location:reached', { location: 'north-cabin' });
       this.showNotification('Došel jsi k domku. Uvnitř jsou samé blbiny.');
     };
+
+    // Other players, if this is a multiplayer session
+    if (this.net?.isConnected) {
+      this.remotePlayers = new RemotePlayers(this.engine.scene, this.net);
+      this.net.onChat = (name, text) => this.showNotification(`${name}: ${text}`);
+      this.net.onError = (message) => this.showNotification(message);
+    }
 
     this.music = new MusicDirector();
     this.music.start();
@@ -849,6 +863,9 @@ export class Game {
       this.updateFlyerPickup(playerPos);
     }
 
+    // Other players: send where we are a few times a second, and draw theirs
+    this.updateNetwork(dt);
+
     // Fires burn on, and the compass points the way out
     this.burnedTown.update(dt);
     this.northRide.update(playerPos);
@@ -1051,6 +1068,29 @@ export class Game {
 
     // Default dialog
     this.dialogBox.showSimple(npc, npc.def.dialog);
+  }
+
+  /**
+   * Keep the other players in sync. Position goes out ten times a second
+   * rather than every frame — that's plenty for someone walking, and it keeps
+   * the traffic down on a connection we don't control.
+   */
+  private updateNetwork(dt: number): void {
+    if (!this.net?.isConnected || !this.remotePlayers) return;
+
+    this.netSendTimer -= dt;
+    if (this.netSendTimer <= 0) {
+      this.netSendTimer = 0.1;
+      this.net.sendState({
+        x: this.player.mesh.position.x,
+        y: this.player.mesh.position.y,
+        z: this.player.mesh.position.z,
+        rotY: this.player.mesh.rotation.y,
+        mounted: this.ridingHorse || this.ridingUnicorn,
+      });
+    }
+
+    this.remotePlayers.update(dt);
   }
 
   /** Everyone left in town hurries to the cellar behind the church. */
@@ -1326,6 +1366,14 @@ export class Game {
   /** Show a temporary notification on screen */
   private processChat(text: string): void {
     if (!text) return;
+
+    // In a session, anything that isn't a command goes to the other players
+    if (this.net?.isConnected && !text.startsWith('/')) {
+      this.net.sendChat(text);
+      this.showNotification(`${this.net.selfName}: ${text}`);
+      return;
+    }
+
     const match = text.match(/^\/money\s+(\d+)$/);
     if (match) {
       const amount = parseInt(match[1], 10);

@@ -309,3 +309,30 @@
   color: rgba(222, 184, 135, 0.55);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
+
+/* Starving: blood creeps in from the edges of the screen */
+#starving-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(150, 0, 0, 0) 34%,
+    rgba(160, 8, 8, 0.30) 58%,
+    rgba(140, 0, 0, 0.62) 80%,
+    rgba(95, 0, 0, 0.88) 100%
+  );
+}
+
+#starving-vignette.active {
+  opacity: 1;
+  animation: starvingPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes starvingPulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}

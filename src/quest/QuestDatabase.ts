@@ -174,4 +174,24 @@ export const QUESTS: QuestDef[] = [
     reward: { lilky: 0 },
     isRepeatable: false,
   },
+  {
+    id: 'buy-supplies',
+    name: 'Nakup zásoby',
+    description:
+      'V noci tu bude vlkodlak a ty nechceš vybíhat ven o hladu. Kup si v obchodě aspoň 3 vody a 3 jídla.',
+    type: 'collection',
+    giverId: 'wazovsky-story',
+    objectives: [
+      {
+        type: 'collect', target: 'water',
+        description: 'Nakup vodu (0/3)', amount: 3, current: 0,
+      },
+      {
+        type: 'collect', target: 'steak', anyOf: ['beans', 'herb'],
+        description: 'Nakup jídlo (0/3)', amount: 3, current: 0,
+      },
+    ],
+    reward: { lilky: 0 },
+    isRepeatable: false,
+  },
 ];

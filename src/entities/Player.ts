@@ -261,6 +261,16 @@ export class Player {
     return body;
   }
 
+  /**
+   * Running on empty. Below this the screen bleeds red at the edges and the
+   * player can only walk.
+   */
+  static readonly STARVING_HUNGER = 15;
+
+  get isStarving(): boolean {
+    return this.hunger <= Player.STARVING_HUNGER;
+  }
+
   /** Does the player already wear the dragon pendant? */
   get hasPendant(): boolean {
     return this.pendantMesh !== null;
@@ -375,7 +385,8 @@ export class Player {
     const len = moveDir.length();
     const isMoving = len > 0;
 
-    if (wantsSprint && isMoving && this.stamina > 0 && this.exhaustCooldown <= 0) {
+    // Too hungry to run — you can still walk, but that's all
+    if (wantsSprint && isMoving && !this.isStarving && this.stamina > 0 && this.exhaustCooldown <= 0) {
       this.isSprinting = true;
       this.stamina = clamp(this.stamina - STAMINA_DRAIN_RATE * dt, 0, this.maxStamina);
       // When fully depleted, start the exhaustion cooldown

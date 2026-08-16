@@ -96,6 +96,8 @@ export class Game {
   private nightPending = false;
   private flyerPromptEl!: HTMLElement;
   private eKeyWasDownFlyer = false;
+  private starvingVignetteEl: HTMLElement | null = null;
+  private wasStarving = false;
 
   // Bought stable horse (rideable)
   private boughtHorseMesh: THREE.Group | null = null;
@@ -543,6 +545,8 @@ export class Game {
     this.flyerPromptEl.textContent = 'Stiskni E pro zvednutí letáku';
     document.body.appendChild(this.flyerPromptEl);
 
+    this.starvingVignetteEl = document.getElementById('starving-vignette');
+
     // Rainbow overlay for the magic-herb trip (blends over the 3D canvas)
     this.tripOverlayEl = document.createElement('div');
     this.tripOverlayEl.id = 'trip-overlay';
@@ -671,6 +675,14 @@ export class Game {
     const hungerText = document.getElementById('hunger-text');
     if (hungerFill) hungerFill.style.width = `${(this.player.hunger / this.player.maxHunger) * 100}%`;
     if (hungerText) hungerText.textContent = `${Math.round(this.player.hunger)} / ${this.player.maxHunger}`;
+
+    // Starving: blood at the edges, and no more running
+    const starving = this.player.isStarving;
+    if (starving !== this.wasStarving) {
+      this.wasStarving = starving;
+      this.starvingVignetteEl?.classList.toggle('active', starving);
+      if (starving) this.showNotification('Máš hlad! Nemůžeš běhat — najez se.');
+    }
 
     // Interaction (right-click on NPCs)
     this.interactionSystem.update();
@@ -1019,6 +1031,12 @@ export class Game {
             7 // he's not strolling, he's getting out of town
           );
           this.showNotification('Wazovský utekl z města.');
+
+          // Nobody's coming to help — stock up before dark
+          this.questManager.accept('buy-supplies');
+          setTimeout(() => {
+            this.showNotification('Nakup si zásoby: aspoň 3 vody a 3 jídla.');
+          }, 2600);
         },
       },
     ]);

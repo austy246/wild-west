@@ -5,6 +5,11 @@ export interface QuestObjective {
   type: 'deliver' | 'collect' | 'kill' | 'reach';
   /** Target identifier: NPC id, item id, enemy type, or location id */
   target: string;
+  /**
+   * Alternative targets that also count, for objectives like "any 3 foods"
+   * where several different items satisfy the same requirement.
+   */
+  anyOf?: string[];
   /** Human-readable description */
   description: string;
   amount: number;

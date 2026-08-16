@@ -95,7 +95,8 @@ export class QuestManager {
   private updateObjectives(type: string, target: string, amount: number): void {
     for (const aq of this.activeQuests) {
       for (const obj of aq.objectives) {
-        if (obj.type === type && obj.target === target && obj.current < obj.amount) {
+        const hits = obj.target === target || obj.anyOf?.includes(target) === true;
+        if (obj.type === type && hits && obj.current < obj.amount) {
           obj.current = Math.min(obj.current + amount, obj.amount);
           EventBus.emit('quest:progress', {
             questId: aq.def.id,
